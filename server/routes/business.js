@@ -31,7 +31,7 @@ router.post('/', requireAuth, async (req, res) => {
     .insert({
       user_id: req.user.id,
       name,
-      google_review_link: google_review_link || '',
+      google_review_url: google_review_link || '',
     })
     .select()
     .single();
@@ -47,7 +47,7 @@ router.patch('/', requireAuth, async (req, res) => {
 
   const { data, error } = await req.supabase
     .from('businesses')
-    .update({ name, google_review_link })
+    .update({ name, google_review_url: google_review_link })
     .eq('user_id', req.user.id)
     .select()
     .single();
