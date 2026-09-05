@@ -29,7 +29,7 @@ router.get('/', requireAuth, async (req, res) => {
 
 // POST /api/customers - add a new customer
 router.post('/', requireAuth, async (req, res) => {
-  const { name, phone } = req.body;
+  const { name, phone, sms_consent } = req.body;
 
   if (!name || !phone) {
     return res.status(400).json({ error: 'Name and phone are required' });
@@ -45,7 +45,14 @@ router.post('/', requireAuth, async (req, res) => {
 
   const { data, error } = await req.supabase
     .from('customers')
-    .insert({ business_id: business.id, name, phone })
+        .insert({
+      business_id: business.id,
+      name,
+      phone,
+      sms_consent: sms_consent === true,
+      sms_consent_at: sms_consent === true ? new Date().toISOString() : null,
+      consent_source: sms_consent === true ? 'added_by_business' : null,
+    })
     .select()
     .single();
 
