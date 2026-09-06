@@ -6,6 +6,7 @@ const businessRoutes = require('./routes/business');
 const customerRoutes = require('./routes/customers');
 const smsRoutes = require('./routes/sms');
 const stripeRoutes = require('./routes/stripe');
+const ratingRoutes = require('./routes/rating');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,6 +20,7 @@ app.use(express.json());
 app.use('/api/business', businessRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/sms', smsRoutes);
+app.use('/api/rating', ratingRoutes);
 app.use('/api/stripe', stripeRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
