@@ -1,17 +1,10 @@
 const express = require('express');
-const { createClient } = require('@supabase/supabase-js');
+const { supabaseAdmin } = require('../lib/supabase');
 
 const router = express.Router();
 
-// Public route — no auth. Uses the service-role client since the person
-// rating is a customer, not a logged-in user.
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
-
 // GET /api/rating/:businessId
-// Returns the info the public rating page needs to render.
+// Public — returns the info the rating page needs to render.
 router.get('/:businessId', async (req, res) => {
   const { businessId } = req.params;
 
@@ -35,7 +28,7 @@ router.get('/:businessId', async (req, res) => {
 });
 
 // POST /api/rating/:businessId
-// Records a star rating. 4-5 -> return the Google link (send them public).
+// 4-5 -> return the Google link (send them public).
 // 1-3 -> save private feedback (keep it off Google).
 router.post('/:businessId', async (req, res) => {
   const { businessId } = req.params;
