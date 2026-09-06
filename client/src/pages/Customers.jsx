@@ -17,6 +17,7 @@ export default function Customers({ business }) {
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+    const [smsConsent, setSmsConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [sendingId, setSendingId] = useState(null)
 
@@ -37,10 +38,11 @@ export default function Customers({ business }) {
     e.preventDefault()
     setSubmitting(true)
     try {
-      const { data } = await api.post('/customers', { name, phone })
+      const { data } = await api.post('/customers', { name, phone, sms_consent: smsConsent })
       setCustomers((prev) => [{ ...data.customer, review_requests: [] }, ...prev])
       setName('')
       setPhone('')
+            setSmsConsent(false)
       setShowForm(false)
       toast.success(`${data.customer.name} added!`)
     } catch (err) {
@@ -130,6 +132,18 @@ export default function Customers({ business }) {
                 />
               </div>
             </div>
+                    <div className="flex items-start gap-2 mt-1">
+          <input
+            type="checkbox"
+            id="smsConsent"
+            checked={smsConsent}
+            onChange={(e) => setSmsConsent(e.target.checked)}
+            className="mt-1"
+          />
+          <label htmlFor="smsConsent" className="text-xs text-gray-600">
+            Customer agreed to receive review request texts (SMS)
+          </label>
+        </div>
             <div className="flex items-end gap-2">
               <button
                 type="submit"
