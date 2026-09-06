@@ -188,12 +188,29 @@ router.get('/stats', requireAuth, async (req, res) => {
     const now = new Date();
     return sent.getMonth() === now.getMonth() && sent.getFullYear() === now.getFullYear();
   }).length;
+   // Group requests into weekly buckets for the growth chart (last 8 weeks)
+  const now = new Date();
+  const weekly = [];
+  for (let i = 7; i >= 0; i--) {
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - i * 7);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 7);
+    const count = requests.filter((r) => {
+      const sent = new Date(r.sent_at);
+      return sent >= weekStart && sent < weekEnd;
+    }).length;
+    const label = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
+    weekly.push({ week: label, requests: count });
+  } 
 
   res.json({
     stats: {
       total_sent: totalSent,
       sent_this_month: thisMonth,
       recent_requests: requests.slice(0, 10),
+            weekly: weekly,
     },
   });
 });
