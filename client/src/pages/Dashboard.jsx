@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
 import toast from 'react-hot-toast'
 import { Send, Users, TrendingUp, Clock, Plus } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 function StatCard({ label, value, icon: Icon, color }) {
   return (
@@ -86,6 +87,29 @@ export default function Dashboard({ business }) {
             icon={Users}
             color="bg-purple-500"
           />
+        </div>
+      )}
+            {/* Review requests growth chart */}
+      {stats?.weekly && stats.weekly.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
+          <h2 className="font-semibold text-gray-900 mb-1">Review requests over time</h2>
+          <p className="text-sm text-gray-500 mb-6">Last 8 weeks</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={stats.weekly} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="week" tick={{ fontSize: 12, fill: '#6b7280' }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
+              <Tooltip />
+              <Line
+                type="monotone"
+                dataKey="requests"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                dot={{ r: 4, fill: '#3b82f6' }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
 
