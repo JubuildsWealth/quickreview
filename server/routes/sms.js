@@ -69,9 +69,8 @@ router.post('/send', requireAuth, async (req, res) => {
   }
   // ----------------------------------------------------------------------
 
-  const reviewLink =
-    business.google_review_link ||
-    'https://www.google.com/search?q=' + encodeURIComponent(business.name);
+    const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  const reviewLink = `${appUrl}/rate/${business.id}?c=${customer.id}`;
 
   // A2P-compliant message: identifies the business + includes opt-out language.
   // Carriers require both. Do not remove the "Reply STOP" line.
