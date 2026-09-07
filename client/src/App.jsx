@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Customers from './pages/Customers'
 import Subscribe from './pages/Subscribe'
 import Rating from './pages/Rating'
+import Invoices from './pages/Invoices'
 import Navbar from './components/Navbar'
 
 function PrivateRoute({ children, business }) {
@@ -117,6 +118,16 @@ export default function App() {
             !business ? <Navigate to="/onboarding" /> :
             business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
             <Customers business={business} />
+          }
+        />
+        
+        <Route
+          path="/invoices"
+          element={
+            !session ? <Navigate to="/login" /> :
+            !business ? <Navigate to="/onboarding" /> :
+            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
+            <Invoices business={business} />
           }
         />
 
