@@ -6,6 +6,7 @@ import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
 import Customers from './pages/Customers'
 import Subscribe from './pages/Subscribe'
+import Rating from './pages/Rating'
 import Navbar from './components/Navbar'
 
 function PrivateRoute({ children, business }) {
@@ -78,6 +79,7 @@ export default function App() {
     <>
       {session && business && <Navbar business={business} />}
       <Routes>
+        <Route path="/rate/:businessId" element={<Rating />} />
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
 
         <Route
