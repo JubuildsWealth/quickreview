@@ -24,55 +24,76 @@ export default function Onboarding({ onComplete }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-8">
+    <div className="min-h-screen bg-white flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-100 rounded-2xl mb-4">
-            <Building2 className="w-7 h-7 text-blue-600" />
+          <div className="w-10 h-10 mx-auto mb-5 rounded-xl border border-gray-200 flex items-center justify-center">
+            <Building2 className="w-4.5 h-4.5 text-brand-700" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Set up your business</h1>
-          <p className="text-gray-500 mt-1 text-sm">This takes 30 seconds — just two fields.</p>
+
+          <p className="text-sm font-semibold tracking-[-0.02em] text-gray-900 mb-4">
+            Arova
+          </p>
+
+          <h1 className="text-2xl font-semibold tracking-[-0.035em] text-gray-900">
+            Set up your business
+          </h1>
+
+          <p className="text-sm text-gray-500 mt-2">
+            This takes 30 seconds — just two fields.
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Business name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g. Johnson Plumbing & HVAC"
-            />
-          </div>
+        <div className="bg-white rounded-2xl border border-gray-200 px-6 py-7 sm:px-7">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Business name <span className="text-red-500">*</span>
+              </label>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Google Review link
-            </label>
-            <input
-              type="url"
-              value={googleReviewLink}
-              onChange={(e) => setGoogleReviewLink(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="https://g.page/r/YOUR_REVIEW_ID/review"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Find yours: Google Maps → your business → Share → Copy link. You can add this later.
-            </p>
-          </div>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full h-11 border border-gray-200 rounded-xl px-3.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition"
+                placeholder="e.g. Johnson Plumbing & HVAC"
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            {loading ? 'Saving…' : 'Continue to billing'}
-          </button>
-        </form>
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Google Review link
+              </label>
+
+              <input
+                type="url"
+                value={googleReviewLink}
+                onChange={(e) => setGoogleReviewLink(e.target.value)}
+                className="w-full h-11 border border-gray-200 rounded-xl px-3.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition"
+                placeholder="https://g.page/r/YOUR_REVIEW_ID/review"
+              />
+
+              <p className="text-xs leading-5 text-gray-400 mt-2">
+                Find yours: Google Maps → your business → Share → Copy link. You can add this later.
+              </p>
+            </div>
+
+            <div className="pt-1">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-11 bg-brand-600 text-white rounded-xl text-sm font-semibold tracking-[-0.01em] hover:bg-brand-700 disabled:opacity-50 transition-colors"
+              >
+                {loading ? 'Saving…' : 'Continue to billing'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <p className="text-xs font-medium tracking-[-0.01em] text-gray-400 text-center mt-5">
+          Built to help you get more customers.
+        </p>
       </div>
     </div>
   )
