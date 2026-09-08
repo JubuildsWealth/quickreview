@@ -89,9 +89,9 @@ export default function Dashboard({ business }) {
               <Line
                 type="monotone"
                 dataKey="requests"
-                stroke="#f5a623"
+                               stroke="#1d1d1f"
                 strokeWidth={2.5}
-                dot={{ r: 4, fill: '#f5a623' }}
+                dot={{ r: 4, fill: '#1d1d1f' }}
                 activeDot={{ r: 6 }}
               />
             </LineChart>
