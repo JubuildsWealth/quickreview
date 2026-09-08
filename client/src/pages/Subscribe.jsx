@@ -26,46 +26,75 @@ export default function Subscribe({ business }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+    <div className="min-h-screen bg-white flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-yellow-100 rounded-2xl mb-4">
-            <Star className="w-7 h-7 text-yellow-500 fill-current" />
+          <div className="w-10 h-10 mx-auto mb-5 rounded-xl border border-gray-200 flex items-center justify-center">
+            <span className="text-base font-semibold tracking-[-0.03em] text-brand-700">
+              A
+            </span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Start getting reviews</h1>
-          <p className="text-gray-500 mt-1 text-sm">
+
+          <p className="text-sm font-semibold tracking-[-0.02em] text-gray-900 mb-4">
+            Arova
+          </p>
+
+          <h1 className="text-2xl font-semibold tracking-[-0.035em] text-gray-950">
+            Start getting reviews
+          </h1>
+
+          <p className="text-sm text-gray-500 mt-2">
             One simple plan. Cancel any time.
           </p>
         </div>
 
-        <div className="border-2 border-blue-500 rounded-xl p-6 mb-6">
-          <div className="flex items-end gap-1 mb-1">
-            <span className="text-4xl font-bold text-gray-900">$97</span>
-            <span className="text-gray-500 mb-1">/month</span>
-          </div>
-          <p className="text-sm text-gray-500 mb-5">QuickReview Pro</p>
+        <div className="bg-white rounded-2xl border border-gray-200 px-6 py-7 sm:px-7">
+          <div className="pb-6 border-b border-gray-100">
+            <p className="text-sm font-semibold text-gray-900">
+              Arova
+            </p>
 
-          <ul className="space-y-3">
+            <div className="flex items-end gap-1.5 mt-3">
+              <span className="text-4xl font-semibold tracking-[-0.045em] text-gray-950">
+                $97
+              </span>
+              <span className="text-sm text-gray-500 mb-1">
+                /month
+              </span>
+            </div>
+          </div>
+
+          <ul className="space-y-4 py-6">
             {features.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm text-gray-700">
-                <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-                {f}
+              <li
+                key={f}
+                className="flex items-start gap-3 text-sm leading-5 text-gray-700"
+              >
+                <div className="w-5 h-5 rounded-md bg-brand-50 flex items-center justify-center shrink-0">
+                  <Check className="w-3.5 h-3.5 text-brand-700" />
+                </div>
+
+                <span>{f}</span>
               </li>
             ))}
           </ul>
+
+          <button
+            onClick={handleSubscribe}
+            disabled={loading}
+            className="w-full h-11 bg-brand-600 text-white rounded-xl text-sm font-semibold tracking-[-0.01em] hover:bg-brand-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            <CreditCard className="w-4 h-4" />
+            {loading ? 'Redirecting to checkout…' : 'Subscribe now — $97/month'}
+          </button>
+
+          <p className="text-xs leading-5 text-gray-400 text-center mt-4">
+            Powered by Stripe. Your card is charged $97 monthly. Cancel any time from your billing portal.
+          </p>
         </div>
 
-        <button
-          onClick={handleSubscribe}
-          disabled={loading}
-          className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-        >
-          <CreditCard className="w-4 h-4" />
-          {loading ? 'Redirecting to checkout…' : 'Subscribe now — $97/month'}
-        </button>
-
-        <p className="text-xs text-gray-400 text-center mt-3">
-          Powered by Stripe. Your card is charged $97 monthly. Cancel any time from your billing portal.
+        <p className="text-xs font-medium tracking-[-0.01em] text-gray-400 text-center mt-5">
+          Built to help you get more customers.
         </p>
       </div>
     </div>
