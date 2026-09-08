@@ -8,6 +8,7 @@ import Customers from './pages/Customers'
 import Subscribe from './pages/Subscribe'
 import Rating from './pages/Rating'
 import Invoices from './pages/Invoices'
+import Settings from './pages/Settings'
 import Navbar from './components/Navbar'
 
 function PrivateRoute({ children, business }) {
@@ -22,7 +23,7 @@ function PrivateRoute({ children, business }) {
   if (session === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -71,7 +72,7 @@ export default function App() {
   if (session === undefined || loadingBusiness) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -120,7 +121,7 @@ export default function App() {
             <Customers business={business} />
           }
         />
-        
+
         <Route
           path="/invoices"
           element={
@@ -128,6 +129,16 @@ export default function App() {
             !business ? <Navigate to="/onboarding" /> :
             business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
             <Invoices business={business} />
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            !session ? <Navigate to="/login" /> :
+            !business ? <Navigate to="/onboarding" /> :
+            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
+            <Settings business={business} onUpdate={setBusiness} />
           }
         />
 
