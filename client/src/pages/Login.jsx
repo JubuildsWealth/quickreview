@@ -37,7 +37,7 @@ export default function Login() {
             <Star className="w-5 h-5 text-brand-600" />
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+          <h1 className="text-3xl font-semibold tracking-tight text-gray-900">
             Arova
           </h1>
 
@@ -47,6 +47,18 @@ export default function Login() {
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {mode === 'login' ? 'Welcome back' : 'Create your account'}
+            </h2>
+
+            <p className="text-sm text-gray-500 mt-1">
+              {mode === 'login'
+                ? 'Log in to manage your customers and follow-ups.'
+                : 'Start collecting more reviews from your customers.'}
+            </p>
+          </div>
+
           <div className="flex bg-gray-50 rounded-xl p-1 mb-6">
             {['login', 'signup'].map((m) => (
               <button
@@ -108,6 +120,10 @@ export default function Login() {
             </p>
           )}
         </div>
+
+        <p className="text-xs text-gray-400 text-center mt-5">
+          Built for local service businesses
+        </p>
       </div>
     </div>
   )
