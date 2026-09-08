@@ -34,15 +34,14 @@ export default function Invoices({ business }) {
         api.get('/invoices'),
         api.get('/customers'),
       ])
-      setInvoices(inv.invoices || [])
-      setCustomers(cust.customers || [])
+           setInvoices(inv.data.invoices || [])
+      setCustomers(cust.data.customers || [])
     } catch (e) {
       toast.error('Could not load invoices')
     } finally {
       setLoading(false)
     }
   }
-
   useEffect(() => { load() }, [])
 
   const createInvoice = async () => {
