@@ -73,7 +73,7 @@ export default function Rating() {
   if (!business) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 bg-white">
-        <p className="text-gray-400 text-sm">We couldn't find this business.</p>
+        <p className="text-gray-400 text-sm">We could not find this business.</p>
       </div>
     )
   }
@@ -95,7 +95,7 @@ export default function Rating() {
           </p>
 
           {googleLink && (
-         <a   
+            
               href={googleLink}
               target="_blank"
               rel="noopener noreferrer"
@@ -141,26 +141,19 @@ export default function Rating() {
 
         {selected > 0 && (
           <div className="space-y-4">
-            <div>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={3}
-                placeholder={
-                  selected >= 4
-                   'Want to add anything? (optional)'
-                    : 'What could we have done better? (optional)'
-                }
-                className="w-full border border-gray-200 rounded-xl p-3.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition resize-none"
-              />
-            </div>
-
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={3}
+              placeholder={selected >= 4 ? 'Want to add anything? (optional)' : 'What could we have done better? (optional)'}
+              className="w-full border border-gray-200 rounded-xl p-3.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition resize-none"
+            />
             <button
               onClick={handleSubmit}
               disabled={submitting}
               className="w-full bg-brand-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-brand-700 disabled:opacity-50 transition-colors"
             >
-              {submitting ? 'Submitting…' : 'Submit'}
+              {submitting ? 'Submitting...' : 'Submit'}
             </button>
           </div>
         )}
