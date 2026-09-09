@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import api from '../lib/api'
 import toast from 'react-hot-toast'
-import { Plus, Send, Trash2, Phone, User, CheckCircle } from 'lucide-react'
+import { Plus, Send, Trash2, Phone, User } from 'lucide-react'
 
 function formatPhone(phone) {
   const digits = phone.replace(/\D/g, '')
@@ -259,14 +259,19 @@ export default function Customers({ business }) {
                       {formatPhone(customer.phone)}
                     </p>
 
-                    {sent && (
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        <CheckCircle className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="text-xs text-gray-400">
-                          Request sent {new Date(last.sent_at).toLocaleDateString()}
+                    <div className="mt-2">
+                      {sent ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          Requested {new Date(last.sent_at).toLocaleDateString()}
                         </span>
-                      </div>
-                    )}
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                          Not requested
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
