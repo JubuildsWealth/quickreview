@@ -1,165 +1,78 @@
-import { useEffect, useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
-import { supabase } from './lib/supabase'
-import Login from './pages/Login'
-import Onboarding from './pages/Onboarding'
-import Dashboard from './pages/Dashboard'
-import Customers from './pages/Customers'
-import Subscribe from './pages/Subscribe'
-import Rating from './pages/Rating'
-import Invoices from './pages/Invoices'
-import Settings from './pages/Settings'
-import Automations from './pages/Automations'
-import Navbar from './components/Navbar'
+import { Link, useLocation } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import api from '../lib/api'
+import toast from 'react-hot-toast'
+import { LayoutDashboard, Users, Star, LogOut, CreditCard, FileText, Settings, Zap } from 'lucide-react'
 
-function PrivateRoute({ children, business }) {
-  const [session, setSession] = useState(undefined)
+export default function Navbar({ business }) {
+  const location = useLocation()
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => subscription.unsubscribe()
-  }, [])
-
-  if (session === undefined) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
   }
 
-  if (!session) return <Navigate to="/login" replace />
-  return children
-}
-
-export default function App() {
-  const [session, setSession] = useState(undefined)
-  const [business, setBusiness] = useState(null)
-  const [loadingBusiness, setLoadingBusiness] = useState(true)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session) fetchBusiness(session)
-      else setLoadingBusiness(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s)
-      if (s) fetchBusiness(s)
-      else { setBusiness(null); setLoadingBusiness(false) }
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const fetchBusiness = async (session) => {
-    setLoadingBusiness(true)
+  const handleManageBilling = async () => {
     try {
-      const res = await fetch('/api/business', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      if (res.ok) {
-        const { business } = await res.json()
-        setBusiness(business)
-      }
-    } catch (e) {
-      console.error('Failed to fetch business', e)
-    } finally {
-      setLoadingBusiness(false)
+      const { data } = await api.post('/stripe/portal')
+      window.location.href = data.url
+    } catch {
+      toast.error('Could not open billing portal')
     }
   }
 
-  if (session === undefined || loadingBusiness) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
+  const navItems = [
+    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/customers', label: 'Customers', icon: Users },
+    { to: '/invoices', label: 'Invoices', icon: FileText },
+    { to: '/automations', label: 'Automations', icon: Zap },
+    { to: '/settings', label: 'Settings', icon: Settings },
+  ]
 
   return (
-    <>
-      {session && business && <Navbar business={business} />}
-      <Routes>
-        <Route path="/rate/:businessId" element={<Rating />} />
-        <Route path="/login" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
+    <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
+      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <Link to="/dashboard" className="flex items-center gap-2 font-semibold text-lg text-brand-600">
+            <Star className="w-5 h-5" />
+            Arova
+          </Link>
+          <div className="flex items-center gap-1">
+            {navItems.map(({ to, label, icon: Icon }) => (
+              <Link
+                key={to}
+                to={to}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                  location.pathname === to
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </Link>
+            ))}
+          </div>
+        </div>
 
-        <Route
-          path="/onboarding"
-          element={
-            !session ? <Navigate to="/login" /> :
-            business ? <Navigate to="/dashboard" /> :
-            <Onboarding onComplete={setBusiness} />
-          }
-        />
-
-        <Route
-          path="/subscribe"
-          element={
-            !session ? <Navigate to="/login" /> :
-            !business ? <Navigate to="/onboarding" /> :
-            <Subscribe business={business} />
-          }
-        />
-
-        <Route
-          path="/dashboard"
-          element={
-            !session ? <Navigate to="/login" /> :
-            !business ? <Navigate to="/onboarding" /> :
-            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
-            <Dashboard business={business} />
-          }
-        />
-
-        <Route
-          path="/customers"
-          element={
-            !session ? <Navigate to="/login" /> :
-            !business ? <Navigate to="/onboarding" /> :
-            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
-            <Customers business={business} />
-          }
-        />
-
-        <Route
-          path="/invoices"
-          element={
-            !session ? <Navigate to="/login" /> :
-            !business ? <Navigate to="/onboarding" /> :
-            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
-            <Invoices business={business} />
-          }
-        />
-
-        <Route
-          path="/automations"
-          element={
-            !session ? <Navigate to="/login" /> :
-            !business ? <Navigate to="/onboarding" /> :
-            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
-            <Automations business={business} />
-          }
-        />
-
-        <Route
-          path="/settings"
-          element={
-            !session ? <Navigate to="/login" /> :
-            !business ? <Navigate to="/onboarding" /> :
-            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
-            <Settings business={business} onUpdate={setBusiness} />
-          }
-        />
-
-        <Route path="*" element={
-          !session ? <Navigate to="/login" /> :
-          !business ? <Navigate to="/onboarding" /> :
-          business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
-          <Navigate to="/dashboard" />
-        } />
-      </Routes>
-    </>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500 hidden sm:block">{business?.name}</span>
+          <button
+            onClick={handleManageBilling}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            title="Manage billing"
+          >
+            <CreditCard className="w-4 h-4" />
+            <span className="hidden sm:inline">Billing</span>
+          </button>
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
+        </div>
+      </div>
+    </nav>
   )
 }
