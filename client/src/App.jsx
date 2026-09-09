@@ -10,6 +10,7 @@ import Rating from './pages/Rating'
 import Invoices from './pages/Invoices'
 import Settings from './pages/Settings'
 import Automations from './pages/Automations'
+import Feedback from './pages/Feedback'
 import Navbar from './components/Navbar'
 
 function PrivateRoute({ children, business }) {
@@ -140,6 +141,16 @@ export default function App() {
             !business ? <Navigate to="/onboarding" /> :
             business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
             <Automations business={business} />
+          }
+        />
+
+        <Route
+          path="/feedback"
+          element={
+            !session ? <Navigate to="/login" /> :
+            !business ? <Navigate to="/onboarding" /> :
+            business.subscription_status !== 'active' ? <Navigate to="/subscribe" /> :
+            <Feedback business={business} />
           }
         />
 
