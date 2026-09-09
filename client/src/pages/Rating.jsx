@@ -95,7 +95,7 @@ export default function Rating() {
           </p>
 
           {googleLink && (
-            
+         <a   
               href={googleLink}
               target="_blank"
               rel="noopener noreferrer"
@@ -148,7 +148,7 @@ export default function Rating() {
                 rows={3}
                 placeholder={
                   selected >= 4
-                    ? 'Anything you'd like to add? (optional)'
+                   'Want to add anything? (optional)'
                     : 'What could we have done better? (optional)'
                 }
                 className="w-full border border-gray-200 rounded-xl p-3.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition resize-none"
