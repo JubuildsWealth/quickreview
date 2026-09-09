@@ -8,6 +8,7 @@ const smsRoutes = require('./routes/sms');
 const stripeRoutes = require('./routes/stripe');
 const ratingRoutes = require('./routes/rating');
 const invoiceRoutes = require('./routes/invoices');
+const feedbackRoutes = require('./routes/feedback');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,6 +24,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/sms', smsRoutes);
 app.use('/api/rating', ratingRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 app.use('/api/stripe', stripeRoutes);
 
