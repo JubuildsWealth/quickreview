@@ -18,6 +18,7 @@ export default function Customers({ business }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [smsConsent, setSmsConsent] = useState(false)
+  const [spanish, setSpanish] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [sendingId, setSendingId] = useState(null)
 
@@ -38,11 +39,17 @@ export default function Customers({ business }) {
     e.preventDefault()
     setSubmitting(true)
     try {
-      const { data } = await api.post('/customers', { name, phone, sms_consent: smsConsent })
+      const { data } = await api.post('/customers', {
+        name,
+        phone,
+        sms_consent: smsConsent,
+        language: spanish ? 'es' : 'en',
+      })
       setCustomers((prev) => [{ ...data.customer, review_requests: [] }, ...prev])
       setName('')
       setPhone('')
       setSmsConsent(false)
+      setSpanish(false)
       setShowForm(false)
       toast.success(`${data.customer.name} added!`)
     } catch (err) {
@@ -168,6 +175,22 @@ export default function Customers({ business }) {
               </label>
             </div>
 
+            <div className="mt-3 flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="spanish"
+                checked={spanish}
+                onChange={(e) => setSpanish(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              />
+              <label
+                htmlFor="spanish"
+                className="text-sm leading-5 text-gray-500"
+              >
+                Send this customer messages in Spanish
+              </label>
+            </div>
+
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-6 pt-5 border-t border-gray-100">
               <button
                 type="button"
@@ -259,7 +282,7 @@ export default function Customers({ business }) {
                       {formatPhone(customer.phone)}
                     </p>
 
-                    <div className="mt-2">
+                    <div className="mt-2 flex items-center gap-2">
                       {sent ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
@@ -269,6 +292,12 @@ export default function Customers({ business }) {
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500">
                           <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
                           Not requested
+                        </span>
+                      )}
+
+                      {customer.language === 'es' && (
+                        <span className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700">
+                          Español
                         </span>
                       )}
                     </div>
