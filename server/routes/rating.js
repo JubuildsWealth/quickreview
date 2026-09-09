@@ -28,8 +28,8 @@ router.get('/:businessId', async (req, res) => {
 });
 
 // POST /api/rating/:businessId
-// 4-5 -> return the Google link (send them public).
-// 1-3 -> save private feedback (keep it off Google).
+// Compliant: every customer is offered the Google review link.
+// We still save private feedback for lower ratings so the owner sees it.
 router.post('/:businessId', async (req, res) => {
   const { businessId } = req.params;
   const { rating, comment, customer_id } = req.body;
@@ -49,17 +49,7 @@ router.post('/:businessId', async (req, res) => {
     return res.status(404).json({ error: 'Business not found' });
   }
 
-  // Happy customer (4-5): send them to Google.
-  if (score >= 4) {
-    return res.json({
-      route: 'google',
-      google_review_link:
-        business.google_review_link ||
-        'https://www.google.com/search?q=' + encodeURIComponent(business.name),
-    });
-  }
-
-  // Unhappy customer (1-3): keep it private, save the feedback.
+  // Save the feedback for every rating so the owner has a record.
   const { error: fbError } = await supabaseAdmin
     .from('feedback')
     .insert({
@@ -73,7 +63,10 @@ router.post('/:businessId', async (req, res) => {
     return res.status(500).json({ error: fbError.message });
   }
 
-  res.json({ route: 'private', message: 'Thank you for your feedback.' });
+  // Everyone is offered the Google review link — no gating.
+  res.json({
+    google_review_link: business.google_review_link || null,
+  });
 });
 
 module.exports = router;
