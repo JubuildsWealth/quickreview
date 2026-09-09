@@ -40,7 +40,7 @@ router.post('/send', requireAuth, async (req, res) => {
   // Fetch the customer, scoped to this business
   const { data: customer, error: customerError } = await req.supabase
     .from('customers')
-    .select('id, name, phone, sms_consent, opted_out')
+    .select('id, name, phone, sms_consent, opted_out, language')
     .eq('id', customer_id)
     .eq('business_id', business.id)
     .single();
@@ -69,15 +69,23 @@ router.post('/send', requireAuth, async (req, res) => {
   }
   // ----------------------------------------------------------------------
 
-    const appUrl = process.env.APP_URL || 'http://localhost:5173';
+  const appUrl = process.env.APP_URL || 'http://localhost:5173';
   const reviewLink = `${appUrl}/rate/${business.id}?c=${customer.id}`;
 
   // A2P-compliant message: identifies the business + includes opt-out language.
-  // Carriers require both. Do not remove the "Reply STOP" line.
-  const message =
-    `Hi ${customer.name}! Thanks for choosing ${business.name}. ` +
-    `We'd love to hear about your experience — leave us a quick review: ${reviewLink} ` +
-    `Reply STOP to opt out.`;
+  // Carriers require both. Do not remove the opt-out line.
+  const messages = {
+    en:
+      `Hi ${customer.name}! Thanks for choosing ${business.name}. ` +
+      `We'd love to hear about your experience — leave us a quick review: ${reviewLink} ` +
+      `Reply STOP to opt out.`,
+    es:
+      `Hola ${customer.name}! Gracias por elegir a ${business.name}. ` +
+      `Nos encantaría saber sobre su experiencia — déjenos una reseña rápida: ${reviewLink} ` +
+      `Responda STOP para cancelar.`,
+  };
+
+  const message = messages[customer.language] || messages.en;
 
   let messageSid;
   try {
