@@ -85,30 +85,15 @@ export default function Rating() {
           <div className="w-12 h-12 rounded-2xl bg-brand-50 border border-gray-100 flex items-center justify-center mx-auto mb-5">
             <Star className="w-5 h-5 text-brand-700" />
           </div>
-
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">
-            Thanks for your feedback
-          </h1>
-
-          <p className="text-sm text-gray-500 mb-6">
-            Your experience helps {business.name} and others in the community.
-          </p>
-
+          <h1 className="text-xl font-semibold text-gray-900 mb-2">Thanks for your feedback</h1>
+          <p className="text-sm text-gray-500 mb-6">Your experience helps {business.name} and others in the community.</p>
           {googleLink && (
-            
-              href={googleLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 w-full bg-brand-600 text-white px-4 py-3 rounded-xl text-sm font-semibold hover:bg-brand-700 transition-colors mb-3"
-            >
+            <a href={googleLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 w-full bg-brand-600 text-white px-4 py-3 rounded-xl text-sm font-semibold hover:bg-brand-700 transition-colors mb-3">
               <ExternalLink className="w-4 h-4" />
               Share your experience on Google
             </a>
           )}
-
-          <p className="text-xs text-gray-400">
-            Sharing on Google helps local businesses grow.
-          </p>
+          <p className="text-xs text-gray-400">Sharing on Google helps local businesses grow.</p>
         </div>
       </div>
     )
@@ -119,7 +104,6 @@ export default function Rating() {
       <div className="bg-white rounded-2xl border border-gray-200 p-8 max-w-md w-full text-center">
         <h1 className="text-lg font-semibold text-gray-900 mb-1">{business.name}</h1>
         <p className="text-sm text-gray-500 mb-8">How was your experience?</p>
-
         <div className="flex justify-center gap-2 mb-8">
           {[1, 2, 3, 4, 5].map((n) => (
             <button
@@ -130,15 +114,10 @@ export default function Rating() {
               disabled={!!selected}
               className="transition-transform hover:scale-110 disabled:cursor-default"
             >
-              <Star
-                className="w-9 h-9"
-                fill={(hover || selected) >= n ? '#facc15' : 'none'}
-                stroke={(hover || selected) >= n ? '#facc15' : '#d1d5db'}
-              />
+              <Star className="w-9 h-9" fill={(hover || selected) >= n ? '#facc15' : 'none'} stroke={(hover || selected) >= n ? '#facc15' : '#d1d5db'} />
             </button>
           ))}
         </div>
-
         {selected > 0 && (
           <div className="space-y-4">
             <textarea
