@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
 import toast from 'react-hot-toast'
-import { Send, Users, TrendingUp, Plus, Zap, ArrowRight } from 'lucide-react'
+import { Send, Users, TrendingUp, Plus, Zap, ArrowRight, Check, Link as LinkIcon } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 function StatCard({ label, value, icon: Icon }) {
@@ -15,6 +15,32 @@ function StatCard({ label, value, icon: Icon }) {
       <p className="text-2xl font-semibold tracking-tight text-gray-900">{value ?? '—'}</p>
     </div>
   )
+}
+
+function ChecklistStep({ done, title, subtitle, to, cta }) {
+  const content = (
+    <div className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${
+      done ? 'border-gray-100 bg-gray-50' : 'border-gray-200 hover:border-brand-200 hover:bg-brand-50'
+    }`}>
+      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+        done ? 'bg-green-500' : 'border-2 border-gray-300'
+      }`}>
+        {done && <Check className="w-3.5 h-3.5 text-white" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${done ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+          {title}
+        </p>
+        {!done && <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>}
+      </div>
+      {!done && (
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700 shrink-0">
+          {cta} <ArrowRight className="w-3.5 h-3.5" />
+        </span>
+      )}
+    </div>
+  )
+  return done ? content : <Link to={to}>{content}</Link>
 }
 
 export default function Dashboard({ business }) {
@@ -50,7 +76,11 @@ export default function Dashboard({ business }) {
   const totalSent = stats?.total_sent ?? 0
   const sentThisMonth = stats?.sent_this_month ?? 0
   const hasActivity = totalSent > 0
-    const isNewUser = !loading && totalSent === 0
+  const isNewUser = !loading && totalSent === 0
+
+  const hasReviewLink = !!business.google_review_link
+  const hasCustomer = (customerCount ?? 0) > 0
+  const hasSent = totalSent > 0
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
@@ -77,22 +107,36 @@ export default function Dashboard({ business }) {
           </div>
         </div>
       ) : isNewUser ? (
-        <div className="bg-white rounded-2xl border border-gray-200 px-6 py-14 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-brand-50 border border-gray-100 flex items-center justify-center mx-auto mb-5">
-            <Zap className="w-5 h-5 text-brand-700" />
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-gray-900">Get started with Arova</h2>
+            <p className="text-sm text-gray-500 mt-1.5">
+              Three quick steps and you’ll be collecting reviews in a couple of minutes.
+            </p>
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">Let’s get your first review</h2>
-          <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto leading-relaxed">
-            Add a customer and send them a review request. Every happy customer who leaves a
-            review helps more people find you on Google.
-          </p>
-          <Link
-            to="/customers"
-            className="inline-flex items-center justify-center gap-2 bg-brand-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-brand-700 transition-colors mt-6"
-          >
-            <Plus className="w-4 h-4" />
-            Add your first customer
-          </Link>
+          <div className="space-y-3">
+            <ChecklistStep
+              done={hasReviewLink}
+              title="Add your Google review link"
+              subtitle="So customers can leave you a review in one tap"
+              to="/settings"
+              cta="Add link"
+            />
+            <ChecklistStep
+              done={hasCustomer}
+              title="Add your first customer"
+              subtitle="Takes about 10 seconds"
+              to="/customers"
+              cta="Add customer"
+            />
+            <ChecklistStep
+              done={hasSent}
+              title="Send your first review request"
+              subtitle="Arova texts them a link to leave a review"
+              to="/customers"
+              cta="Send request"
+            />
+          </div>
         </div>
       ) : (
         <>
