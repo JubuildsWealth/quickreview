@@ -50,7 +50,7 @@ export default function Dashboard({ business }) {
   const totalSent = stats?.total_sent ?? 0
   const sentThisMonth = stats?.sent_this_month ?? 0
   const hasActivity = totalSent > 0
-  const isNewUser = !loading && totalSent === 0 && (customerCount ?? 0) === 0
+    const isNewUser = !loading && totalSent === 0
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
