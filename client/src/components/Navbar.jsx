@@ -33,10 +33,9 @@ export default function Navbar({ business }) {
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <Link to="/dashboard" className="flex items-center gap-2 font-semibold text-lg text-brand-600">
-            <Star className="w-5 h-5" />
-            Arova
-          </Link>
+          <Link to="/dashboard" className="font-semibold text-lg text-brand-600">
+  Arova
+</Link>
           <div className="flex items-center gap-1">
             {navItems.map(({ to, label, icon: Icon }) => (
               <Link
