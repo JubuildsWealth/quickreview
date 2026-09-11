@@ -63,6 +63,25 @@ router.post('/:businessId', async (req, res) => {
     return res.status(500).json({ error: fbError.message });
   }
 
+  // Detection: the customer responded, so mark their open review requests as
+  // handled. This is the stop condition that prevents follow-ups from nagging
+  // someone who already left a review. (Option B: close all open requests.)
+  if (customer_id) {
+    const { error: updateError } = await supabaseAdmin
+      .from('review_requests')
+      .update({ review_left: true })
+      .eq('business_id', business.id)
+      .eq('customer_id', customer_id)
+      .eq('review_left', false);
+
+    // Non-fatal: if this fails, the feedback is still saved and the customer
+    // still gets their link. Worst case is one extra follow-up, never a broken
+    // response. Log it but don't fail the request.
+    if (updateError) {
+      console.error('Failed to mark review_requests as reviewed:', updateError.message);
+    }
+  }
+
   // Everyone is offered the Google review link — no gating.
   res.json({
     google_review_link: business.google_review_link || null,
