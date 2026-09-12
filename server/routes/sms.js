@@ -107,7 +107,7 @@ router.post('/send', requireAuth, async (req, res) => {
       customer_id: customer.id,
       sent_at: new Date().toISOString(),
       status: 'sent',
-      twilio_message_sid: messageSid,
+      twilio_sid: messageSid,
     })
     .select()
     .single();
