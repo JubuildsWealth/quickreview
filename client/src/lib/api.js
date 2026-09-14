@@ -2,7 +2,7 @@ import axios from 'axios'
 import { supabase } from './supabase'
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${import.meta.env.VITE_API_URL}/api`,
 })
 
 // Attach the Supabase access token to every request
