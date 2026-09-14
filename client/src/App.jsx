@@ -57,7 +57,7 @@ export default function App() {
   const fetchBusiness = async (session) => {
     setLoadingBusiness(true)
     try {
-      const res = await fetch('/api/business', {
+     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/business`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
       if (res.ok) {
