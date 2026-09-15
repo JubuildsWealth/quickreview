@@ -26,6 +26,21 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Business name is required' });
   }
 
+  // Guard: if this user already has a business, return it instead of creating a duplicate
+  const { data: existing, error: lookupError } = await req.supabase
+    .from('businesses')
+    .select('*')
+    .eq('user_id', req.user.id)
+    .maybeSingle();
+
+  if (lookupError) {
+    return res.status(500).json({ error: lookupError.message });
+  }
+
+  if (existing) {
+    return res.status(200).json({ business: existing });
+  }
+
   const { data, error } = await req.supabase
     .from('businesses')
     .insert({
