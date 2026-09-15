@@ -134,40 +134,74 @@ router.post(
       });
     }
 
-    const updateSubscriptionStatus = async (subscription, status) => {
-      const customerId =
-        typeof subscription.customer === 'string'
-          ? subscription.customer
-          : subscription.customer.id;
+    // Helper: extract the customer ID whether it's a string or an object
+    const getCustomerId = (subscription) =>
+      typeof subscription.customer === 'string'
+        ? subscription.customer
+        : subscription.customer.id;
 
-      await supabaseAdmin
+    // Sync a subscription's CURRENT state from Stripe into Supabase.
+    // We deliberately re-fetch the subscription from Stripe instead of
+    // trusting event.data.object.status, because 'created' (incomplete)
+    // and 'updated' (active) events can arrive out of order — trusting
+    // the payload lets a stale 'incomplete' overwrite a fresh 'active'.
+    const syncSubscription = async (subscriptionId, customerId) => {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+      const { error } = await supabaseAdmin
         .from('businesses')
         .update({
-          subscription_status: status,
+          subscription_status: subscription.status,
           stripe_subscription_id: subscription.id,
         })
         .eq('stripe_customer_id', customerId);
+
+      if (error) {
+        console.error('Failed to sync subscription to Supabase:', error);
+      }
     };
 
-    switch (event.type) {
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-        await updateSubscriptionStatus(
-          event.data.object,
-          event.data.object.status
-        );
-        break;
+    try {
+      switch (event.type) {
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated': {
+          const sub = event.data.object;
+          await syncSubscription(sub.id, getCustomerId(sub));
+          break;
+        }
 
-      case 'customer.subscription.deleted':
-        await updateSubscriptionStatus(event.data.object, 'canceled');
-        break;
+        case 'customer.subscription.deleted': {
+          const sub = event.data.object;
+          const { error } = await supabaseAdmin
+            .from('businesses')
+            .update({
+              subscription_status: 'canceled',
+              stripe_subscription_id: sub.id,
+            })
+            .eq('stripe_customer_id', getCustomerId(sub));
 
-      case 'invoice.payment_failed':
-        await supabaseAdmin
-          .from('businesses')
-          .update({ subscription_status: 'past_due' })
-          .eq('stripe_customer_id', event.data.object.customer);
-        break;
+          if (error) {
+            console.error('Failed to mark subscription canceled:', error);
+          }
+          break;
+        }
+
+        case 'invoice.payment_failed': {
+          const { error } = await supabaseAdmin
+            .from('businesses')
+            .update({ subscription_status: 'past_due' })
+            .eq('stripe_customer_id', event.data.object.customer);
+
+          if (error) {
+            console.error('Failed to mark subscription past_due:', error);
+          }
+          break;
+        }
+      }
+    } catch (err) {
+      console.error('Webhook handler error:', err);
+      // Still return 200 so Stripe doesn't retry endlessly on a bug we
+      // need to fix in code; the error is logged above for debugging.
     }
 
     res.json({ received: true });
