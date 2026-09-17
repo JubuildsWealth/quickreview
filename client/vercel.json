@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/((?!privacy\\.html|terms\\.html).*)",
+      "source": "/((?!privacy|terms|assets|.*\\.).*)",
       "destination": "/index.html"
     }
   ]
