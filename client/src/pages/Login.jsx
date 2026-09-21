@@ -4,7 +4,13 @@ import toast from 'react-hot-toast'
 import { Star } from 'lucide-react'
 
 export default function Login() {
-  const [mode, setMode] = useState('login') // 'login' | 'signup'
+ const [mode, setMode] = useState(
+  typeof window !== 'undefined' &&
+  (window.location.pathname === '/signup' ||
+   new URLSearchParams(window.location.search).get('signup') === 'true')
+    ? 'signup'
+    : 'login'
+) // 'login' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
