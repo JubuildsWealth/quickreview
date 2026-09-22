@@ -83,7 +83,7 @@ export default function App() {
     <>
       {session && business && <Navbar business={business} />}
       <Routes>
-        <Route path="/rate/:businessId" element={<Rating />} />
+        <Route path="/rate/:slug" element={<Rating />} />
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
 
         <Route

@@ -22,7 +22,7 @@ router.post('/send', requireAuth, async (req, res) => {
   // Fetch the business, scoped to the logged-in user (tenant isolation)
   const { data: business, error: businessError } = await req.supabase
     .from('businesses')
-    .select('id, name, google_review_link, subscription_status')
+    .select('id, name, slug, google_review_link, subscription_status')
     .eq('user_id', req.user.id)
     .single();
 
@@ -70,7 +70,7 @@ router.post('/send', requireAuth, async (req, res) => {
   // ----------------------------------------------------------------------
 
   const appUrl = process.env.APP_URL || 'http://localhost:5173';
-  const reviewLink = `${appUrl}/rate/${business.id}?c=${customer.id}`;
+  const reviewLink = `${appUrl}/rate/${business.slug || business.id}?c=${customer.id}`;
 
   // A2P-compliant message: identifies the business + includes opt-out language.
   // Carriers require both. Do not remove the opt-out line.

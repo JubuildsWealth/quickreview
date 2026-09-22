@@ -3,6 +3,28 @@ const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
+async function generateSlug(name, supabase) {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  let candidate = base;
+  let suffix = 2;
+
+  for (;;) {
+    const { data } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('slug', candidate)
+      .maybeSingle();
+
+    if (!data) return candidate;
+    candidate = `${base}-${suffix}`;
+    suffix++;
+  }
+}
+
 // GET /api/business - fetch the current user's business profile
 router.get('/', requireAuth, async (req, res) => {
   const { data, error } = await req.supabase
@@ -40,6 +62,7 @@ router.post('/', requireAuth, async (req, res) => {
   if (existing) {
     return res.status(200).json({ business: existing });
   }
+  const slug = await generateSlug(name, req.supabase);
 
   const { data, error } = await req.supabase
     .from('businesses')
@@ -47,6 +70,7 @@ router.post('/', requireAuth, async (req, res) => {
       user_id: req.user.id,
       name,
       google_review_link: google_review_link || '',
+      slug,
     })
     .select()
     .single();

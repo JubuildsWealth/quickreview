@@ -5,7 +5,7 @@ import { Star, ExternalLink } from 'lucide-react'
 const API = import.meta.env.VITE_API_URL || ''
 
 export default function Rating() {
-  const { businessId } = useParams()
+  const { slug } = useParams()
   const [searchParams] = useSearchParams()
   const customerId = searchParams.get('c')
 
@@ -19,19 +19,19 @@ export default function Rating() {
   const [googleLink, setGoogleLink] = useState(null)
 
   useEffect(() => {
-    fetch(`${API}/api/rating/${businessId}`)
+    fetch(`${API}/api/rating/${slug}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.business) setBusiness(data.business)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [businessId])
+  }, [slug])
 
   const submitRating = async (score) => {
     setSubmitting(true)
     try {
-      const res = await fetch(`${API}/api/rating/${businessId}`, {
+      const res = await fetch(`${API}/api/rating/${slug}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

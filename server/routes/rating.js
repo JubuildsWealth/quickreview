@@ -3,16 +3,20 @@ const { supabaseAdmin } = require('../lib/supabase');
 
 const router = express.Router();
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function lookupBusiness(param) {
+  const q = supabaseAdmin.from('businesses').select('id, name, google_review_link');
+  return UUID_RE.test(param) ? q.eq('id', param).single() : q.eq('slug', param).single();
+}
+
 // GET /api/rating/:businessId
 // Public — returns the info the rating page needs to render.
+// Accepts either a slug ("test-hvac") or a raw UUID for old links.
 router.get('/:businessId', async (req, res) => {
   const { businessId } = req.params;
 
-  const { data: business, error } = await supabaseAdmin
-    .from('businesses')
-    .select('id, name, google_review_link')
-    .eq('id', businessId)
-    .single();
+  const { data: business, error } = await lookupBusiness(businessId);
 
   if (error || !business) {
     return res.status(404).json({ error: 'Business not found' });
@@ -39,11 +43,7 @@ router.post('/:businessId', async (req, res) => {
     return res.status(400).json({ error: 'A rating between 1 and 5 is required.' });
   }
 
-  const { data: business, error: bizError } = await supabaseAdmin
-    .from('businesses')
-    .select('id, name, google_review_link')
-    .eq('id', businessId)
-    .single();
+  const { data: business, error: bizError } = await lookupBusiness(businessId);
 
   if (bizError || !business) {
     return res.status(404).json({ error: 'Business not found' });
