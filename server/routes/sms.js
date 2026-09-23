@@ -15,6 +15,11 @@ const twilioClient = twilio(
 router.post('/send', requireAuth, async (req, res) => {
   const { customer_id } = req.body;
 
+  console.log('DEBUG /api/sms/send hit:', {
+    customer_id,
+    user_id: req.user?.id,
+  });
+
   if (!customer_id) {
     return res.status(400).json({ error: 'customer_id is required' });
   }
@@ -25,6 +30,12 @@ router.post('/send', requireAuth, async (req, res) => {
     .select('id, name, slug, google_review_link, subscription_status')
     .eq('user_id', req.user.id)
     .single();
+
+  console.log('DEBUG business lookup:', {
+    business,
+    businessError,
+    user_id: req.user.id,
+  });
 
   if (businessError || !business) {
     return res.status(404).json({ error: 'Business not found' });
@@ -44,6 +55,13 @@ router.post('/send', requireAuth, async (req, res) => {
     .eq('id', customer_id)
     .eq('business_id', business.id)
     .single();
+
+  console.log('DEBUG customer lookup:', {
+    customer,
+    customerError,
+    searched_customer_id: customer_id,
+    searched_business_id: business.id,
+  });
 
   if (customerError || !customer) {
     return res.status(404).json({ error: 'Customer not found' });
