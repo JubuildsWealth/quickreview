@@ -45,8 +45,7 @@ export default function Rating() {
 
       const data = await res.json()
 
-      // Only allow the Google review link for positive ratings.
-      if (score >= 4 && data.google_review_link) {
+      if (data.google_review_link) {
         setGoogleLink(data.google_review_link)
       } else {
         setGoogleLink(null)
@@ -90,8 +89,6 @@ export default function Rating() {
   }
 
   if (submitted) {
-    const isPositiveRating = selected >= 4
-
     return (
       <div className="min-h-screen flex items-center justify-center px-4 bg-white">
         <div className="bg-white rounded-2xl border border-gray-200 p-8 max-w-md w-full text-center">
@@ -104,10 +101,10 @@ export default function Rating() {
           </h1>
 
           <p className="text-sm text-gray-500 mb-6">
-            Your experience helps {business.name} improve and better serve its customers.
+            Your feedback has been shared with {business.name}.
           </p>
 
-          {isPositiveRating && googleLink && (
+          {googleLink && (
             <>
               <a
                 href={googleLink}
@@ -120,15 +117,9 @@ export default function Rating() {
               </a>
 
               <p className="text-xs text-gray-400">
-                Sharing on Google helps local businesses grow.
+                Want to share publicly too? You can leave a Google review.
               </p>
             </>
-          )}
-
-          {!isPositiveRating && (
-            <p className="text-xs text-gray-400">
-              Your feedback has been shared privately with {business.name}.
-            </p>
           )}
         </div>
       </div>
