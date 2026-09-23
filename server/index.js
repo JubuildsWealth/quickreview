@@ -9,7 +9,7 @@ const stripeRoutes = require('./routes/stripe');
 const ratingRoutes = require('./routes/rating');
 const invoiceRoutes = require('./routes/invoices');
 const feedbackRoutes = require('./routes/feedback');
-
+const automationRoutes = require('./routes/automations');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -25,7 +25,7 @@ app.use('/api/sms', smsRoutes);
 app.use('/api/rating', ratingRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/feedback', feedbackRoutes);
-
+app.use('/api/automations', automationRoutes);
 app.use('/api/stripe', stripeRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
