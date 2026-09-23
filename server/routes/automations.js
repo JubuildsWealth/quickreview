@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
-
+const { runReviewFollowups } = require('../jobs/reviewFollowup');
 const router = express.Router();
 
 const DEFAULT_SETTINGS = {
@@ -110,4 +110,25 @@ router.patch('/', requireAuth, async (req, res) => {
   res.json({ settings });
 });
 
+// POST /api/automations/test-review-followup
+// Temporary authenticated route for testing the Review Follow-Up worker.
+router.post('/test-review-followup', requireAuth, async (req, res) => {
+  try {
+    const result = await runReviewFollowups();
+
+    res.json({
+      success: true,
+      result,
+    });
+  } catch (error) {
+    console.error('Review Follow-Up test failed:', error);
+
+    res.status(500).json({
+      error: error.message || 'Review Follow-Up test failed',
+    });
+  }
+});
+
 module.exports = router;
+
+
