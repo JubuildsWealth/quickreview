@@ -8,7 +8,7 @@ const twilioClient = twilio(
 
 // TESTING ONLY.
 // After we verify the complete flow, we'll increase this for production.
-const FOLLOWUP_DELAY_MINUTES = 2;
+const FOLLOWUP_DELAY_MINUTES = 48 * 60;
 
 async function runReviewFollowups() {
   console.log('[Review Follow-Up] Starting run...');
@@ -200,3 +200,15 @@ async function runReviewFollowups() {
 }
 
 module.exports = { runReviewFollowups };
+
+if (require.main === module) {
+  runReviewFollowups()
+    .then((result) => {
+      console.log('[Review Follow-Up] Finished:', result);
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('[Review Follow-Up] Fatal error:', error);
+      process.exit(1);
+    });
+}
