@@ -7,7 +7,8 @@ const API = import.meta.env.VITE_API_URL || ''
 export default function Rating() {
   const { slug } = useParams()
   const [searchParams] = useSearchParams()
-  const customerId = searchParams.get('c')
+
+  const [customerId] = useState(() => searchParams.get('c'))
 
   const [business, setBusiness] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -30,6 +31,7 @@ export default function Rating() {
 
   const submitRating = async (score) => {
     setSubmitting(true)
+
     try {
       const res = await fetch(`${API}/api/rating/${slug}`, {
         method: 'POST',
@@ -40,12 +42,19 @@ export default function Rating() {
           customer_id: customerId || undefined,
         }),
       })
+
       const data = await res.json()
-      if (data.google_review_link) {
+
+      // Only allow the Google review link for positive ratings.
+      if (score >= 4 && data.google_review_link) {
         setGoogleLink(data.google_review_link)
+      } else {
+        setGoogleLink(null)
       }
+
       setSubmitted(true)
     } catch (e) {
+      setGoogleLink(null)
       setSubmitted(true)
     } finally {
       setSubmitting(false)
@@ -73,27 +82,54 @@ export default function Rating() {
   if (!business) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 bg-white">
-        <p className="text-gray-400 text-sm">We could not find this business.</p>
+        <p className="text-gray-400 text-sm">
+          We could not find this business.
+        </p>
       </div>
     )
   }
 
   if (submitted) {
+    const isPositiveRating = selected >= 4
+
     return (
       <div className="min-h-screen flex items-center justify-center px-4 bg-white">
         <div className="bg-white rounded-2xl border border-gray-200 p-8 max-w-md w-full text-center">
           <div className="w-12 h-12 rounded-2xl bg-brand-50 border border-gray-100 flex items-center justify-center mx-auto mb-5">
             <Star className="w-5 h-5 text-brand-700" />
           </div>
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">Thanks for your feedback</h1>
-          <p className="text-sm text-gray-500 mb-6">Your experience helps {business.name} and others in the community.</p>
-          {googleLink && (
-            <a href={googleLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 w-full bg-brand-600 text-white px-4 py-3 rounded-xl text-sm font-semibold hover:bg-brand-700 transition-colors mb-3">
-              <ExternalLink className="w-4 h-4" />
-              Share your experience on Google
-            </a>
+
+          <h1 className="text-xl font-semibold text-gray-900 mb-2">
+            Thanks for your feedback
+          </h1>
+
+          <p className="text-sm text-gray-500 mb-6">
+            Your experience helps {business.name} improve and better serve its customers.
+          </p>
+
+          {isPositiveRating && googleLink && (
+            <>
+              <a
+                href={googleLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 w-full bg-brand-600 text-white px-4 py-3 rounded-xl text-sm font-semibold hover:bg-brand-700 transition-colors mb-3"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Share your experience on Google
+              </a>
+
+              <p className="text-xs text-gray-400">
+                Sharing on Google helps local businesses grow.
+              </p>
+            </>
           )}
-          <p className="text-xs text-gray-400">Sharing on Google helps local businesses grow.</p>
+
+          {!isPositiveRating && (
+            <p className="text-xs text-gray-400">
+              Your feedback has been shared privately with {business.name}.
+            </p>
+          )}
         </div>
       </div>
     )
@@ -102,8 +138,14 @@ export default function Rating() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-white">
       <div className="bg-white rounded-2xl border border-gray-200 p-8 max-w-md w-full text-center">
-        <h1 className="text-lg font-semibold text-gray-900 mb-1">{business.name}</h1>
-        <p className="text-sm text-gray-500 mb-8">How was your experience?</p>
+        <h1 className="text-lg font-semibold text-gray-900 mb-1">
+          {business.name}
+        </h1>
+
+        <p className="text-sm text-gray-500 mb-8">
+          How was your experience?
+        </p>
+
         <div className="flex justify-center gap-2 mb-8">
           {[1, 2, 3, 4, 5].map((n) => (
             <button
@@ -114,19 +156,29 @@ export default function Rating() {
               disabled={!!selected}
               className="transition-transform hover:scale-110 disabled:cursor-default"
             >
-              <Star className="w-9 h-9" fill={(hover || selected) >= n ? '#facc15' : 'none'} stroke={(hover || selected) >= n ? '#facc15' : '#d1d5db'} />
+              <Star
+                className="w-9 h-9"
+                fill={(hover || selected) >= n ? '#facc15' : 'none'}
+                stroke={(hover || selected) >= n ? '#facc15' : '#d1d5db'}
+              />
             </button>
           ))}
         </div>
+
         {selected > 0 && (
           <div className="space-y-4">
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={3}
-              placeholder={selected >= 4 ? 'Want to add anything? (optional)' : 'What could we have done better? (optional)'}
+              placeholder={
+                selected >= 4
+                  ? 'Want to add anything? (optional)'
+                  : 'What could we have done better? (optional)'
+              }
               className="w-full border border-gray-200 rounded-xl p-3.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition resize-none"
             />
+
             <button
               onClick={handleSubmit}
               disabled={submitting}
