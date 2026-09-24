@@ -21,7 +21,6 @@ const AUTOMATIONS = [
     description:
       'Automatically remind customers about unpaid invoices until they’re paid — no more chasing money by hand.',
     available: true,
-   
   },
   {
     id: 'missed-call',
@@ -30,8 +29,7 @@ const AUTOMATIONS = [
     title: 'Missed Call Recovery',
     description:
       'Instantly text back anyone whose call you missed, so a job under a sink doesn’t become a job lost to the next guy.',
-    available: false,
-    status: 'soon',
+    available: true,
   },
   {
     id: 'estimate-followup',
@@ -40,8 +38,7 @@ const AUTOMATIONS = [
     title: 'Estimate Follow-Up',
     description:
       'Follow up on estimates you sent that haven’t been accepted yet, and win back jobs sitting on the fence.',
-    available: false,
-    status: 'soon',
+    available: true,
   },
   {
     id: 'reactivation',
@@ -50,8 +47,7 @@ const AUTOMATIONS = [
     title: 'Customer Reactivation',
     description:
       'Reach out to past customers who haven’t booked in a while and bring them back before they call someone else.',
-    available: false,
-    status: 'soon',
+    available: true,
   },
 ]
 
@@ -80,7 +76,7 @@ function StatusBadge({ available, status, enabled }) {
 
   return (
     <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-      Coming soon
+      Beta
     </span>
   )
 }
@@ -136,6 +132,10 @@ export default function Automations({ business }) {
     const currentValue = settings[setting]
     const nextValue = !currentValue
 
+    // Look up the automation title so the toast matches what was toggled.
+    const automation = AUTOMATIONS.find((a) => a.setting === setting)
+    const title = automation ? automation.title : 'Automation'
+
     setSaving(setting)
 
     try {
@@ -147,8 +147,8 @@ export default function Automations({ business }) {
 
       toast.success(
         nextValue
-          ? 'Review Follow-Up turned on'
-          : 'Review Follow-Up turned off'
+          ? `${title} turned on`
+          : `${title} turned off`
       )
     } catch (e) {
       toast.error('Could not update automation')
@@ -256,8 +256,8 @@ export default function Automations({ business }) {
 
         <p className="text-sm text-gray-600 mt-1 leading-relaxed">
           Arova only follows up with eligible customers and respects consent
-          and opt-outs. Review Follow-Up sends a single automatic reminder and
-          stops once the customer responds.
+          and opt-outs. All automations respect consent, opt-outs, and STOP
+          replies automatically.
         </p>
       </div>
     </div>
