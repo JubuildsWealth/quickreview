@@ -1,5 +1,6 @@
 const { runReviewFollowups } = require('./reviewFollowup');
 const { runInvoiceRecovery } = require('./InvoiceRecovery');
+const { runEstimateFollowups } = require('./estimateFollowup');
 
 async function runAutomations() {
   console.log('========================================');
@@ -9,6 +10,7 @@ async function runAutomations() {
   const results = {
     reviewFollowup: null,
     invoiceRecovery: null,
+    estimateFollowup: null,
   };
 
   // -------------------------------------------------------------
@@ -21,10 +23,7 @@ async function runAutomations() {
       '[Arova Automations] Review Follow-Up failed:',
       error.message
     );
-
-    results.reviewFollowup = {
-      error: error.message,
-    };
+    results.reviewFollowup = { error: error.message };
   }
 
   // -------------------------------------------------------------
@@ -37,10 +36,20 @@ async function runAutomations() {
       '[Arova Automations] Invoice Recovery failed:',
       error.message
     );
+    results.invoiceRecovery = { error: error.message };
+  }
 
-    results.invoiceRecovery = {
-      error: error.message,
-    };
+  // -------------------------------------------------------------
+  // Estimate Follow-Up
+  // -------------------------------------------------------------
+  try {
+    results.estimateFollowup = await runEstimateFollowups();
+  } catch (error) {
+    console.error(
+      '[Arova Automations] Estimate Follow-Up failed:',
+      error.message
+    );
+    results.estimateFollowup = { error: error.message };
   }
 
   console.log('========================================');
