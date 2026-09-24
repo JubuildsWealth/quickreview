@@ -10,7 +10,7 @@ const twilioClient = twilio(
 // First reminder after 3 days.
 // Additional reminders must also be at least 3 days apart.
 // Never send more than 3 automatic reminders.
-const REMINDER_DELAY_DAYS = 0;
+const REMINDER_DELAY_DAYS = 3;
 const MAX_REMINDERS = 3;
 
 async function runInvoiceRecovery() {
