@@ -13,7 +13,7 @@ const twilioClient = twilio(
 // Estimates are more time-sensitive than invoices — a stale
 // estimate loses to a competitor faster than a stale invoice
 // gets written off, so we chase a bit sooner.
-const FOLLOWUP_DELAY_DAYS = 2;
+const FOLLOWUP_DELAY_DAYS = 0;
 const MAX_FOLLOWUPS = 3;
 
 async function runEstimateFollowups() {
