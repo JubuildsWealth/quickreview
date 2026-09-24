@@ -1,6 +1,7 @@
 const { runReviewFollowups } = require('./reviewFollowup');
 const { runInvoiceRecovery } = require('./InvoiceRecovery');
 const { runEstimateFollowups } = require('./estimateFollowup');
+const { runCustomerReactivation } = require('./customerReactivation');
 
 async function runAutomations() {
   console.log('========================================');
@@ -11,6 +12,7 @@ async function runAutomations() {
     reviewFollowup: null,
     invoiceRecovery: null,
     estimateFollowup: null,
+    customerReactivation: null,
   };
 
   // -------------------------------------------------------------
@@ -50,6 +52,19 @@ async function runAutomations() {
       error.message
     );
     results.estimateFollowup = { error: error.message };
+  }
+
+  // -------------------------------------------------------------
+  // Customer Reactivation
+  // -------------------------------------------------------------
+  try {
+    results.customerReactivation = await runCustomerReactivation();
+  } catch (error) {
+    console.error(
+      '[Arova Automations] Customer Reactivation failed:',
+      error.message
+    );
+    results.customerReactivation = { error: error.message };
   }
 
   console.log('========================================');
