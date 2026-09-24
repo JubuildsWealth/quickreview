@@ -1,5 +1,5 @@
 const { runReviewFollowups } = require('./reviewFollowup');
-const { runInvoiceRecovery } = require('./invoiceRecovery');
+const { runInvoiceRecovery } = require('./InvoiceRecovery');
 
 async function runAutomations() {
   console.log('========================================');
