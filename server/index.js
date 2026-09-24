@@ -10,11 +10,17 @@ const ratingRoutes = require('./routes/rating');
 const invoiceRoutes = require('./routes/invoices');
 const feedbackRoutes = require('./routes/feedback');
 const automationRoutes = require('./routes/automations');
+const twilioWebhookRoutes = require('./routes/twilioWebhooks');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Stripe webhook needs raw body — mount before json middleware
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
+// Twilio webhooks send application/x-www-form-urlencoded, not JSON.
+// Mount this parser BEFORE the JSON parser so Twilio requests parse right.
+app.use('/api/twilio', express.urlencoded({ extended: false }));
 
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173' }));
 app.use(express.json());
@@ -27,9 +33,10 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/automations', automationRoutes);
 app.use('/api/stripe', stripeRoutes);
+app.use('/api/twilio', twilioWebhookRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => {
-  console.log(`QuickReview server running on port ${PORT}`);
+  console.log(`Arova API server running on port ${PORT}`);
 });
