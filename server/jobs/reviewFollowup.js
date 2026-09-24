@@ -6,8 +6,7 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// TESTING ONLY.
-// After we verify the complete flow, we'll increase this for production.
+// Production delay: send one follow-up 48 hours after the original request.
 const FOLLOWUP_DELAY_MINUTES = 48 * 60;
 
 async function runReviewFollowups() {
@@ -36,18 +35,18 @@ async function runReviewFollowups() {
   );
 
   if (enabledBusinessIds.length === 0) {
-    console.log('[Review Follow-Up] No businesses have this automation enabled.');
+    console.log(
+      '[Review Follow-Up] No businesses have this automation enabled.'
+    );
+
     return {
       eligible: 0,
       sent: 0,
     };
   }
 
-  // Only find requests that:
-  // 1. belong to a business with the automation enabled
-  // 2. have not received a customer response
-  // 3. have never received an automated follow-up
-  // 4. are old enough for the follow-up
+  // Find possible candidates.
+  // Each candidate must still be claimed before any SMS is sent.
   const { data: requests, error: requestsError } = await supabaseAdmin
     .from('review_requests')
     .select(`
@@ -57,6 +56,7 @@ async function runReviewFollowups() {
       sent_at,
       review_left,
       followup_sent_at,
+      followup_claimed_at,
       customers (
         id,
         name,
@@ -75,6 +75,7 @@ async function runReviewFollowups() {
     .in('business_id', enabledBusinessIds)
     .eq('review_left', false)
     .is('followup_sent_at', null)
+    .is('followup_claimed_at', null)
     .lte('sent_at', cutoff);
 
   if (requestsError) {
@@ -95,7 +96,7 @@ async function runReviewFollowups() {
     const customer = request.customers;
     const business = request.businesses;
 
-    // Safety gates.
+    // Safety gates before claiming the request.
     if (!customer || !business) {
       console.log(
         `[Review Follow-Up] Skipping ${request.id}: missing customer or business.`
@@ -131,6 +132,38 @@ async function runReviewFollowups() {
       continue;
     }
 
+    // Claim the request before sending.
+    //
+    // If another worker already claimed it, this update returns no row,
+    // and this worker skips the request.
+    const claimedAt = new Date().toISOString();
+
+    const { data: claimedRows, error: claimError } = await supabaseAdmin
+      .from('review_requests')
+      .update({
+        followup_claimed_at: claimedAt,
+      })
+      .eq('id', request.id)
+      .eq('review_left', false)
+      .is('followup_sent_at', null)
+      .is('followup_claimed_at', null)
+      .select('id');
+
+    if (claimError) {
+      console.error(
+        `[Review Follow-Up] Could not claim ${request.id}:`,
+        claimError.message
+      );
+      continue;
+    }
+
+    if (!claimedRows || claimedRows.length === 0) {
+      console.log(
+        `[Review Follow-Up] Skipping ${request.id}: already claimed by another worker.`
+      );
+      continue;
+    }
+
     const appUrl = process.env.APP_URL || 'http://localhost:5173';
 
     const reviewLink =
@@ -157,20 +190,19 @@ async function runReviewFollowups() {
         to: customer.phone,
       });
 
-      // Mark this request immediately after the successful Twilio send.
-      // followup_sent_at being non-null prevents another automated follow-up.
+      const sentAt = new Date().toISOString();
+
       const { error: updateError } = await supabaseAdmin
         .from('review_requests')
         .update({
-          followup_sent_at: new Date().toISOString(),
+          followup_sent_at: sentAt,
         })
         .eq('id', request.id)
-        .eq('review_left', false)
-        .is('followup_sent_at', null);
+        .eq('followup_claimed_at', claimedAt);
 
       if (updateError) {
         console.error(
-          `[Review Follow-Up] SMS sent, but failed to record follow-up for ${request.id}:`,
+          `[Review Follow-Up] SMS sent, but failed to record completion for ${request.id}:`,
           updateError.message
         );
         continue;
@@ -183,9 +215,26 @@ async function runReviewFollowups() {
       );
     } catch (error) {
       console.error(
-        `[Review Follow-Up] Failed for request ${request.id}:`,
+        `[Review Follow-Up] SMS failed for ${request.id}:`,
         error.message
       );
+
+      // Release the claim so a future cron run can retry.
+      const { error: releaseError } = await supabaseAdmin
+        .from('review_requests')
+        .update({
+          followup_claimed_at: null,
+        })
+        .eq('id', request.id)
+        .eq('followup_claimed_at', claimedAt)
+        .is('followup_sent_at', null);
+
+      if (releaseError) {
+        console.error(
+          `[Review Follow-Up] Could not release claim for ${request.id}:`,
+          releaseError.message
+        );
+      }
     }
   }
 
