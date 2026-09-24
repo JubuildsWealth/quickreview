@@ -20,8 +20,8 @@ const AUTOMATIONS = [
     title: 'Invoice Recovery',
     description:
       'Automatically remind customers about unpaid invoices until they’re paid — no more chasing money by hand.',
-    available: false,
-    status: 'launching',
+    available: true,
+   
   },
   {
     id: 'missed-call',
