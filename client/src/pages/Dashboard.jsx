@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
 import toast from 'react-hot-toast'
-import { Send, Users, TrendingUp, Plus, Zap, ArrowRight, Check, Link as LinkIcon } from 'lucide-react'
+import { Send, Users, TrendingUp, Plus, Zap, ArrowRight, Check } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import RevenueRecoveryHero from '../components/RevenueRecoveryHero'
+import OpportunityCenter from '../components/OpportunityCenter'
 
 function StatCard({ label, value, icon: Icon }) {
   return (
@@ -46,7 +48,9 @@ function ChecklistStep({ done, title, subtitle, to, cta }) {
 export default function Dashboard({ business }) {
   const [stats, setStats] = useState(null)
   const [customerCount, setCustomerCount] = useState(null)
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [summaryLoading, setSummaryLoading] = useState(true)
   const [searchParams] = useSearchParams()
 
   useEffect(() => {
@@ -54,6 +58,18 @@ export default function Dashboard({ business }) {
       toast.success('Subscription active! Welcome to Arova.')
     }
   }, [])
+
+  const loadSummary = async () => {
+    setSummaryLoading(true)
+    try {
+      const res = await api.get('/dashboard/summary')
+      setSummary(res.data)
+    } catch (err) {
+      // The hero and opportunity center handle empty state, no toast noise.
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -71,16 +87,19 @@ export default function Dashboard({ business }) {
       }
     }
     load()
+    loadSummary()
   }, [])
 
   const totalSent = stats?.total_sent ?? 0
   const sentThisMonth = stats?.sent_this_month ?? 0
-  const hasActivity = totalSent > 0
-  const isNewUser = !loading && totalSent === 0
-
-  const hasReviewLink = !!business.google_review_link
+  const hasReviewActivity = totalSent > 0
   const hasCustomer = (customerCount ?? 0) > 0
+  const hasReviewLink = !!business.google_review_link
   const hasSent = totalSent > 0
+
+  // Truly new = no customers AND no review activity yet. Once they add a
+  // customer we drop the setup checklist and show the recovery engine.
+  const isNewUser = !loading && customerCount === 0 && totalSent === 0
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
@@ -140,32 +159,38 @@ export default function Dashboard({ business }) {
         </div>
       ) : (
         <>
-          <div className="bg-white rounded-2xl border border-gray-200 p-8 mb-6">
-            <p className="text-sm font-medium text-gray-500">Review requests sent</p>
-            <div className="flex items-end gap-4 mt-2">
-              <span className="text-5xl font-semibold tracking-tight text-gray-900 leading-none">
-                {totalSent}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700 mb-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                {sentThisMonth} this month
-              </span>
+          {/* Day 2: Revenue Recovery Engine visual anchor */}
+          <RevenueRecoveryHero summary={summary} loading={summaryLoading} />
+          <OpportunityCenter
+            summary={summary}
+            loading={summaryLoading}
+            onDataChanged={loadSummary}
+          />
+
+          {/* Existing review-request activity, now downshifted to a secondary card */}
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-semibold text-gray-900">Review requests</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Building your Google presence</p>
+              </div>
+              <Link
+                to="/customers"
+                className="text-sm font-semibold text-brand-700 inline-flex items-center gap-1.5"
+              >
+                Send more <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
-            <p className="text-sm text-gray-500 mt-4 max-w-xl leading-relaxed">
-              Every request is a chance for a happy customer to bring you more business.
-              Arova handles the follow-up so you don’t have to.
-            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <StatCard label="Total sent" value={totalSent} icon={Send} />
+              <StatCard label="This month" value={sentThisMonth} icon={TrendingUp} />
+              <StatCard label="Total customers" value={customerCount} icon={Users} />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <StatCard label="Total requests sent" value={totalSent} icon={Send} />
-            <StatCard label="Sent this month" value={sentThisMonth} icon={TrendingUp} />
-            <StatCard label="Total customers" value={customerCount} icon={Users} />
-          </div>
-
-          {stats?.weekly && stats.weekly.length > 0 && hasActivity && (
+          {stats?.weekly && stats.weekly.length > 0 && hasReviewActivity && (
             <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
-              <h2 className="font-semibold text-gray-900 mb-1">Your review requests are growing</h2>
+              <h2 className="font-semibold text-gray-900 mb-1">Review requests trend</h2>
               <p className="text-sm text-gray-500 mb-6">Last 8 weeks</p>
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={stats.weekly} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
@@ -218,7 +243,7 @@ export default function Dashboard({ business }) {
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">Recent activity</h2>
+              <h2 className="font-semibold text-gray-900 mb-4">Recent review requests</h2>
               {!stats?.recent_requests?.length ? (
                 <div className="text-center py-8 text-gray-400">
                   <Send className="w-7 h-7 mx-auto mb-2 opacity-40" />
@@ -241,19 +266,6 @@ export default function Dashboard({ business }) {
               )}
             </div>
           </div>
-
-          <Link
-            to="/automations"
-            className="mt-6 flex items-center justify-between gap-4 bg-white rounded-2xl border border-gray-200 p-5 hover:border-brand-200 transition-colors group"
-          >
-            <div className="min-w-0">
-              <p className="font-medium text-gray-900">Recover unpaid invoices automatically</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                Turn on Invoice Recovery and let Arova chase the money that slips through the cracks.
-              </p>
-            </div>
-            <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-brand-600 transition-colors shrink-0" />
-          </Link>
         </>
       )}
 
