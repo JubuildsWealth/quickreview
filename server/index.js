@@ -8,9 +8,11 @@ const smsRoutes = require('./routes/sms');
 const stripeRoutes = require('./routes/stripe');
 const ratingRoutes = require('./routes/rating');
 const invoiceRoutes = require('./routes/invoices');
+const estimateRoutes = require('./routes/estimates');       // NEW
 const feedbackRoutes = require('./routes/feedback');
 const automationRoutes = require('./routes/automations');
 const twilioWebhookRoutes = require('./routes/twilioWebhooks');
+const dashboardRoutes = require('./routes/dashboard');      // NEW
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,10 +32,12 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/sms', smsRoutes);
 app.use('/api/rating', ratingRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/estimates', estimateRoutes);                  // NEW
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/automations', automationRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/twilio', twilioWebhookRoutes);
+app.use('/api/dashboard', dashboardRoutes);                 // NEW
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
