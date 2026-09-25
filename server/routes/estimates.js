@@ -139,7 +139,8 @@ router.patch('/:id', requireAuth, async (req, res) => {
     }
     update.won_at = now;
     update.attributed_revenue_cents = revenue_cents;
-
+    update.status = 'accepted';
+    update.accepted_at = now;
     // Attribution is honest: if Arova actually followed up at least once
     // before the customer said yes, we take credit. Otherwise 'manual'
     // (the owner closed it themselves; Arova did nothing).
