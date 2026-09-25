@@ -63,7 +63,7 @@ export default function Estimates({ business }) {
 
   const createEstimate = async () => {
     if (!customerId) return toast.error('Pick a customer')
-    const dollars = parseFloat(amount)
+        const dollars = parseFloat(String(amount).replace(/,/g, ''))
     if (!dollars || dollars <= 0) return toast.error('Enter a valid amount')
 
     setSubmitting(true)
@@ -125,7 +125,7 @@ export default function Estimates({ business }) {
 
   const submitWon = async () => {
     if (!wonPromptFor) return
-    const dollars = parseFloat(wonRevenue)
+        const dollars = parseFloat(String(wonRevenue).replace(/,/g, ''))
     if (!dollars || dollars <= 0) return toast.error('Enter the revenue amount')
 
     setBusyId(wonPromptFor.id)
