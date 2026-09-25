@@ -46,7 +46,7 @@ export default function Invoices({ business }) {
 
   const createInvoice = async () => {
     if (!customerId) return toast.error('Pick a customer')
-    const dollars = parseFloat(amount)
+      const dollars = parseFloat(String(amount).replace(/,/g, ''))
     if (!dollars || dollars <= 0) return toast.error('Enter a valid amount')
 
     setSubmitting(true)
