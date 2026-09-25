@@ -8,6 +8,7 @@ import Customers from './pages/Customers'
 import Subscribe from './pages/Subscribe'
 import Rating from './pages/Rating'
 import Invoices from './pages/Invoices'
+import Estimates from './pages/Estimates'
 import Settings from './pages/Settings'
 import Automations from './pages/Automations'
 import Feedback from './pages/Feedback'
@@ -16,8 +17,6 @@ import Navbar from './components/Navbar'
 export default function App() {
   const location = useLocation()
 
-  // Customer rating pages are fully public and should never depend on
-  // the Arova dashboard authentication state.
   const isPublicRatingRoute = location.pathname.startsWith('/rate/')
 
   const [session, setSession] = useState(undefined)
@@ -25,7 +24,6 @@ export default function App() {
   const [loadingBusiness, setLoadingBusiness] = useState(true)
 
   useEffect(() => {
-    // The public rating flow does not need dashboard authentication.
     if (isPublicRatingRoute) {
       setLoadingBusiness(false)
       return
@@ -81,8 +79,6 @@ export default function App() {
     }
   }
 
-  // Public customer review flow.
-  // Render this before any dashboard auth/loading logic.
   if (isPublicRatingRoute) {
     return (
       <Routes>
@@ -179,6 +175,21 @@ export default function App() {
               <Navigate to="/subscribe" replace />
             ) : (
               <Invoices business={business} />
+            )
+          }
+        />
+
+        <Route
+          path="/estimates"
+          element={
+            !session ? (
+              <Navigate to="/login" replace />
+            ) : !business ? (
+              <Navigate to="/onboarding" replace />
+            ) : business.subscription_status !== 'active' ? (
+              <Navigate to="/subscribe" replace />
+            ) : (
+              <Estimates business={business} />
             )
           }
         />
