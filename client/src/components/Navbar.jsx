@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import api from '../lib/api'
 import toast from 'react-hot-toast'
-import { LayoutDashboard, Users, Star, LogOut, CreditCard, FileText, Settings, Zap, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, Users, Star, LogOut, CreditCard, FileText, Settings, Zap, MessageSquare, ClipboardList } from 'lucide-react'
 
 export default function Navbar({ business }) {
   const location = useLocation()
@@ -23,6 +23,7 @@ export default function Navbar({ business }) {
   const navItems = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/customers', label: 'Customers', icon: Users },
+    { to: '/estimates', label: 'Estimates', icon: ClipboardList },
     { to: '/invoices', label: 'Invoices', icon: FileText },
     { to: '/feedback', label: 'Feedback', icon: MessageSquare },
     { to: '/automations', label: 'Automations', icon: Zap },
