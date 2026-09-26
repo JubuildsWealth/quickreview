@@ -84,7 +84,9 @@ router.post('/send', requireAuth, async (req, res) => {
   }
 
   if (!customer.phone) {
-    return res.status(400).json({ error: 'Customer has no phone number on file.' });
+    return res.status(400).json({
+      error: 'Customer has no phone number on file.',
+    });
   }
   // ----------------------------------------------------------------------
 
@@ -107,15 +109,19 @@ router.post('/send', requireAuth, async (req, res) => {
   const message = messages[customer.language] || messages.en;
 
   let messageSid;
+
   try {
     const twilioMsg = await twilioClient.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
       to: customer.phone,
     });
+
     messageSid = twilioMsg.sid;
   } catch (twilioError) {
-    return res.status(500).json({ error: `SMS failed: ${twilioError.message}` });
+    return res.status(500).json({
+      error: `SMS failed: ${twilioError.message}`,
+    });
   }
 
   // Log the review request
@@ -140,48 +146,184 @@ router.post('/send', requireAuth, async (req, res) => {
     });
   }
 
-  res.json({ success: true, message_sid: messageSid, review_request: reviewRequest });
+  res.json({
+    success: true,
+    message_sid: messageSid,
+    review_request: reviewRequest,
+  });
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/sms/inbound  -  Twilio webhook for inbound texts (STOP / START)
+// POST /api/sms/inbound  -  Twilio webhook for inbound texts
 // NOTE: no requireAuth — Twilio calls this, not your dashboard.
 // Twilio's signature validation is what secures it.
 // Set this URL in your Twilio number's "A MESSAGE COMES IN" webhook.
 // ---------------------------------------------------------------------------
 router.post(
   '/inbound',
-  twilio.webhook({ validate: true, authToken: process.env.TWILIO_AUTH_TOKEN }),
+  twilio.webhook({
+    validate: true,
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+  }),
   async (req, res) => {
-    const from = req.body.From;            // customer's phone number
-    const body = (req.body.Body || '').trim().toUpperCase();
+    const from = (req.body.From || '').trim();
+    const originalBody = (req.body.Body || '').trim();
+    const normalizedBody = originalBody.toLowerCase();
+    const commandBody = originalBody.toUpperCase();
+    const twilioSid = req.body.MessageSid || null;
 
-    const STOP_WORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
+    const STOP_WORDS = [
+      'STOP',
+      'STOPALL',
+      'UNSUBSCRIBE',
+      'CANCEL',
+      'END',
+      'QUIT',
+    ];
+
     const START_WORDS = ['START', 'YES', 'UNSTOP'];
 
-    // Use the service-role client here (no logged-in user on a webhook).
-    // req.supabaseAdmin should be the service-key client from your supabase setup.
-    const db = req.supabaseAdmin || req.supabase;
+    const HOT_LEAD_KEYWORDS = [
+      'yes',
+      'when',
+      'tomorrow',
+      'today',
+      'how much',
+      'come out',
+      'can you',
+      'send someone',
+      'call me',
+      'sounds good',
+      "i'm interested",
+      'im interested',
+    ];
 
     try {
-      if (STOP_WORDS.includes(body)) {
-        await db
+      // ---------------------------------------------------------------
+      // STOP
+      // ---------------------------------------------------------------
+      // STOP commands are exact matches. A normal sentence containing
+      // "stop" should not be treated as an opt-out command here.
+      if (STOP_WORDS.includes(commandBody)) {
+        const { error } = await supabaseAdmin
           .from('customers')
-          .update({ opted_out: true, opted_out_at: new Date().toISOString() })
+          .update({
+            opted_out: true,
+            opted_out_at: new Date().toISOString(),
+          })
           .eq('phone', from);
-      } else if (START_WORDS.includes(body)) {
-        await db
+
+        if (error) {
+          throw new Error(`Failed to process STOP: ${error.message}`);
+        }
+
+        console.log('SMS opt-out processed:', { from });
+      }
+
+      // ---------------------------------------------------------------
+      // START
+      // ---------------------------------------------------------------
+      // Exact YES remains a START command because that behavior already
+      // existed. Conversational messages such as "yes when can you come"
+      // continue below and can become hot leads.
+      else if (START_WORDS.includes(commandBody)) {
+        const { error } = await supabaseAdmin
           .from('customers')
-          .update({ opted_out: false, opted_out_at: null })
+          .update({
+            opted_out: false,
+            opted_out_at: null,
+          })
           .eq('phone', from);
+
+        if (error) {
+          throw new Error(`Failed to process START: ${error.message}`);
+        }
+
+        console.log('SMS opt-in processed:', { from });
+      }
+
+      // ---------------------------------------------------------------
+      // NORMAL INBOUND REPLY
+      // ---------------------------------------------------------------
+      else {
+        const matchedKeyword =
+          HOT_LEAD_KEYWORDS.find((keyword) =>
+            normalizedBody.includes(keyword)
+          ) || null;
+
+        const isHotLead = Boolean(matchedKeyword);
+
+        // Find the customer who owns this phone number.
+        // Unknown numbers are allowed, so maybeSingle() is intentional.
+        const { data: customer, error: customerError } =
+          await supabaseAdmin
+            .from('customers')
+            .select('id, business_id, name, phone')
+            .eq('phone', from)
+            .maybeSingle();
+
+        if (customerError) {
+          throw new Error(
+            `Customer lookup failed: ${customerError.message}`
+          );
+        }
+
+        // Log every normal inbound reply.
+        // These column names have been verified against the production
+        // sms_replies table.
+        const { error: replyError } = await supabaseAdmin
+          .from('sms_replies')
+          .insert({
+            business_id: customer?.business_id || null,
+            customer_id: customer?.id || null,
+            from_phone: from,
+            body: originalBody,
+            received_at: new Date().toISOString(),
+            twilio_sid: twilioSid,
+            is_hot_lead: isHotLead,
+            hot_lead_keyword: matchedKeyword,
+          });
+
+        if (replyError) {
+          throw new Error(
+            `Failed to log SMS reply: ${replyError.message}`
+          );
+        }
+
+        console.log('Inbound SMS reply logged:', {
+          from,
+          customer_id: customer?.id || null,
+          business_id: customer?.business_id || null,
+          is_hot_lead: isHotLead,
+          hot_lead_keyword: matchedKeyword,
+        });
+
+        // -------------------------------------------------------------
+        // HOT LEAD NOTIFICATION
+        // -------------------------------------------------------------
+        if (isHotLead) {
+          const leadIdentity = customer?.name || from;
+
+          // TODO Day 4:
+          // Wire this into a real owner notification provider.
+          // For Day 3 we intentionally log the notification instead of
+          // assuming an email provider or unverified businesses.email field.
+          console.log('🔥 HOT LEAD NOTIFICATION:', {
+            message:
+              `🔥 Hot lead from ${leadIdentity}: ` +
+              `'${originalBody}' — reply in Arova.`,
+            customer_id: customer?.id || null,
+            business_id: customer?.business_id || null,
+            from_phone: from,
+          });
+        }
       }
     } catch (err) {
-      // Log but still return 200 so Twilio doesn't retry-storm you
+      // Log but still return 200 so Twilio does not retry-storm the webhook.
       console.error('Inbound webhook error:', err.message);
     }
 
-    // Twilio auto-sends its own STOP/START confirmation at the carrier level,
-    // so we return an empty TwiML response.
+    // Twilio handles its own STOP/START carrier-level confirmation.
     res.type('text/xml').send('<Response></Response>');
   }
 );
@@ -206,37 +348,53 @@ router.get('/stats', requireAuth, async (req, res) => {
     .eq('business_id', business.id)
     .order('sent_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
 
   const totalSent = requests.length;
+
   const thisMonth = requests.filter((r) => {
     const sent = new Date(r.sent_at);
     const now = new Date();
-    return sent.getMonth() === now.getMonth() && sent.getFullYear() === now.getFullYear();
+
+    return (
+      sent.getMonth() === now.getMonth() &&
+      sent.getFullYear() === now.getFullYear()
+    );
   }).length;
-   // Group requests into weekly buckets for the growth chart (last 8 weeks)
+
+  // Group requests into weekly buckets for the growth chart (last 8 weeks)
   const now = new Date();
   const weekly = [];
+
   for (let i = 7; i >= 0; i--) {
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - i * 7);
     weekStart.setHours(0, 0, 0, 0);
+
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
+
     const count = requests.filter((r) => {
       const sent = new Date(r.sent_at);
       return sent >= weekStart && sent < weekEnd;
     }).length;
+
     const label = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-    weekly.push({ week: label, requests: count });
-  } 
+
+    weekly.push({
+      week: label,
+      requests: count,
+    });
+  }
 
   res.json({
     stats: {
       total_sent: totalSent,
       sent_this_month: thisMonth,
       recent_requests: requests.slice(0, 10),
-            weekly: weekly,
+      weekly: weekly,
     },
   });
 });
