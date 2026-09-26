@@ -6,7 +6,7 @@ import { Send, Users, TrendingUp, Plus, Zap, ArrowRight, Check } from 'lucide-re
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import RevenueRecoveryHero from '../components/RevenueRecoveryHero'
 import OpportunityCenter from '../components/OpportunityCenter'
-
+import NeedsAttention from '../components/NeedsAttention'
 function StatCard({ label, value, icon: Icon }) {
   return (
     <div className="bg-white rounded-2xl p-5 border border-gray-200">
@@ -161,6 +161,7 @@ export default function Dashboard({ business }) {
         <>
           {/* Day 2: Revenue Recovery Engine visual anchor */}
           <RevenueRecoveryHero summary={summary} loading={summaryLoading} />
+          <NeedsAttention />
           <OpportunityCenter
             summary={summary}
             loading={summaryLoading}
