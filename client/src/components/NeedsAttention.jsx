@@ -32,14 +32,18 @@ export default function NeedsAttention({ onDataChanged }) {
         table: 'sms_replies',
       },
       () => {
-        loadHotLeads()
+       () => {
+  console.log('🔥 HOT LEAD REALTIME EVENT RECEIVED')
+  loadHotLeads()
 
         if (onDataChanged) {
           onDataChanged()
         }
       }
     )
-    .subscribe()
+    .subscribe((status) => {
+  console.log('🔥 HOT LEAD REALTIME STATUS:', status)
+})
 
   return () => {
     supabase.removeChannel(channel)
