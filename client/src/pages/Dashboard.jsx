@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { Send, Users, TrendingUp, Plus, Zap, ArrowRight, Check } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import RevenueRecoveryHero from '../components/RevenueRecoveryHero'
+import RecoveryQueue from '../components/RecoveryQueue'
 import OpportunityCenter from '../components/OpportunityCenter'
 import NeedsAttention from '../components/NeedsAttention'
 function StatCard({ label, value, icon: Icon }) {
@@ -161,6 +162,7 @@ export default function Dashboard({ business }) {
         <>
           {/* Day 2: Revenue Recovery Engine visual anchor */}
           <RevenueRecoveryHero summary={summary} loading={summaryLoading} />
+          <RecoveryQueue onDataChanged={loadSummary} />
          <NeedsAttention onDataChanged={loadSummary} />
           <OpportunityCenter
             summary={summary}
