@@ -1,6 +1,7 @@
 const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
+const { supabaseAdmin } = require('../lib/supabase');
 
 const router = express.Router();
 
