@@ -1,4 +1,6 @@
-import { TrendingUp, Flame } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { TrendingUp, Flame, CheckCircle2 } from 'lucide-react'
+import api from '../lib/api'
 
 function formatMoney(cents) {
   if (!cents && cents !== 0) return '—'
@@ -9,12 +11,35 @@ function formatMoney(cents) {
   })
 }
 
-/**
- * The visual anchor of the dashboard. Shows the pipeline value Arova is
- * actively working, plus attributed recovery this month, plus hot-leads
- * count (hot leads land Day 3 — will be 0 until then).
- */
+function formatRelativeTime(iso) {
+  if (!iso) return ''
+  const then = new Date(iso).getTime()
+  const diffMs = Date.now() - then
+  const days = Math.floor(diffMs / 86400000)
+  if (days < 1) return 'Today'
+  if (days < 2) return 'Yesterday'
+  if (days < 7) return `${days}d ago`
+  return new Date(iso).toLocaleDateString()
+}
+
 export default function RevenueRecoveryHero({ summary, loading }) {
+  const [events, setEvents] = useState([])
+  const [eventsLoading, setEventsLoading] = useState(true)
+
+  useEffect(() => {
+    const loadEvents = async () => {
+      try {
+        const res = await api.get('/recovery/events?limit=5')
+        setEvents(res.data.events || [])
+      } catch (err) {
+        // Empty state is handled below, no toast noise
+      } finally {
+        setEventsLoading(false)
+      }
+    }
+    loadEvents()
+  }, [summary])
+
   if (loading) {
     return (
       <div className="bg-white rounded-2xl border border-gray-200 p-8 mb-6 animate-pulse">
@@ -74,6 +99,48 @@ export default function RevenueRecoveryHero({ summary, loading }) {
           </div>
         </div>
       </div>
+
+      {/* -------- Recent recoveries -------- */}
+      {!eventsLoading && events.length > 0 && (
+        <div className="mt-6 pt-6 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-medium text-gray-700">Recent recoveries</p>
+            <p className="text-xs text-gray-400">What Arova helped close</p>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {events.map((e) => {
+              const label =
+                e.source_type === 'estimate' ? 'Estimate won' : 'Invoice paid'
+              const followUpsLine =
+                e.reminder_count_at_recovery > 0
+                  ? `after ${e.reminder_count_at_recovery} Arova follow-up${
+                      e.reminder_count_at_recovery === 1 ? '' : 's'
+                    }`
+                  : 'after Arova follow-up'
+
+              return (
+                <li key={e.id} className="py-3 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {formatMoney(e.amount_cents)} · {label}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {e.customer_name}
+                      {e.description ? ` · ${e.description}` : ''} · {followUpsLine}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-400 shrink-0">
+                    {formatRelativeTime(e.recovered_at)}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
