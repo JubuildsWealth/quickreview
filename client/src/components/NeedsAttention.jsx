@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Flame, Phone, Check, MessageSquare } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
-import { supabase } from '../lib/supabase'
+
 export default function NeedsAttention({ onDataChanged }) {
   const [hotLeads, setHotLeads] = useState([])
   const [loading, setLoading] = useState(true)
@@ -20,35 +20,20 @@ export default function NeedsAttention({ onDataChanged }) {
   }
 
   useEffect(() => {
-  loadHotLeads()
+    loadHotLeads()
 
-  const channel = supabase
-    .channel('dashboard-hot-leads')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'sms_replies',
-      },
-      () => {
-        console.log('🔥 HOT LEAD REALTIME EVENT RECEIVED')
+    const interval = setInterval(() => {
+      loadHotLeads()
 
-        loadHotLeads()
-
-        if (onDataChanged) {
-          onDataChanged()
-        }
+      if (onDataChanged) {
+        onDataChanged()
       }
-    )
-    .subscribe((status) => {
-      console.log('🔥 HOT LEAD REALTIME STATUS:', status)
-    })
+    }, 5000)
 
-  return () => {
-    supabase.removeChannel(channel)
-  }
-}, [])
+    return () => {
+      clearInterval(interval)
+    }
+  }, [])
 
   const markHandled = async (id) => {
     setHandlingId(id)
@@ -59,9 +44,11 @@ export default function NeedsAttention({ onDataChanged }) {
       setHotLeads((current) =>
         current.filter((lead) => lead.id !== id)
       )
-if (onDataChanged) {
-  await onDataChanged()
-}
+
+      if (onDataChanged) {
+        await onDataChanged()
+      }
+
       toast.success('Lead marked as handled')
     } catch (err) {
       toast.error(
