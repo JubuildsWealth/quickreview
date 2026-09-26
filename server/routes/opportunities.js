@@ -313,8 +313,111 @@ router.post('/reactivate-batch', requireAuth, async (req, res) => {
   });
 });
 
+
+// GET /api/opportunities/hot-leads
+//
+// Returns unhandled hot SMS replies for the logged-in business.
+// Newest replies appear first.
 // ---------------------------------------------------------------
-// POST /api/opportunities/mark-missed-call-outcome
+router.get('/hot-leads', requireAuth, async (req, res) => {
+  const business = await getBusiness(req, res);
+  if (!business) return;
+
+  try {
+    const { data, error } = await req.supabase
+      .from('sms_replies')
+      .select(`
+        id,
+        customer_id,
+        from_phone,
+        body,
+        received_at,
+        hot_lead_keyword,
+        handled_at,
+        customers (
+          id,
+          name,
+          phone
+        )
+      `)
+      .eq('business_id', business.id)
+      .eq('is_hot_lead', true)
+      .is('handled_at', null)
+      .order('received_at', { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+
+    const hotLeads = (data || []).map((reply) => ({
+      id: reply.id,
+      customer_id: reply.customer_id,
+      customer_name: reply.customers?.name || null,
+      customer_phone: reply.customers?.phone || reply.from_phone,
+      from_phone: reply.from_phone,
+      body: reply.body,
+      received_at: reply.received_at,
+      hot_lead_keyword: reply.hot_lead_keyword,
+    }));
+
+    return res.json({
+      hot_leads: hotLeads,
+      count: hotLeads.length,
+    });
+  } catch (err) {
+    console.error('[Hot Leads] Load error:', err.message);
+
+    return res.status(500).json({
+      error: 'Failed to load hot leads',
+    });
+  }
+});
+
+// ---------------------------------------------------------------
+// POST /api/opportunities/hot-leads/:id/handled
+//
+// Marks a hot lead as handled for the logged-in business.
+// Business scoping prevents one tenant from modifying another.
+// ---------------------------------------------------------------
+router.post('/hot-leads/:id/handled', requireAuth, async (req, res) => {
+  const business = await getBusiness(req, res);
+  if (!business) return;
+
+  try {
+    const { data, error } = await req.supabase
+      .from('sms_replies')
+      .update({
+        handled_at: new Date().toISOString(),
+      })
+      .eq('id', req.params.id)
+      .eq('business_id', business.id)
+      .eq('is_hot_lead', true)
+      .is('handled_at', null)
+      .select(`
+        id,
+        handled_at
+      `)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!data) {
+      return res.status(404).json({
+        error: 'Hot lead not found or already handled',
+      });
+    }
+
+    return res.json({
+      success: true,
+      hot_lead: data,
+    });
+  } catch (err) {
+    console.error('[Hot Leads] Handle error:', err.message);
+
+    return res.status(500).json({
+      error: 'Failed to mark hot lead as handled',
+    });
+  }
+});
 // Body: {
 //   missed_call_id,
 //   outcome: 'booked' | 'dead' | 'replied' | 'no_response',
