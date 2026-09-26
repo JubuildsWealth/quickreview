@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Flame, Phone, Check, MessageSquare } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
-
-export default function NeedsAttention() {
+import { supabase } from '../lib/supabase'
+export default function NeedsAttention({ onDataChanged }) {
   const [hotLeads, setHotLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [handlingId, setHandlingId] = useState(null)
@@ -20,8 +20,31 @@ export default function NeedsAttention() {
   }
 
   useEffect(() => {
-    loadHotLeads()
-  }, [])
+  loadHotLeads()
+
+  const channel = supabase
+    .channel('dashboard-hot-leads')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'sms_replies',
+      },
+      () => {
+        loadHotLeads()
+
+        if (onDataChanged) {
+          onDataChanged()
+        }
+      }
+    )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}, [])
 
   const markHandled = async (id) => {
     setHandlingId(id)
@@ -32,7 +55,9 @@ export default function NeedsAttention() {
       setHotLeads((current) =>
         current.filter((lead) => lead.id !== id)
       )
-
+if (onDataChanged) {
+  await onDataChanged()
+}
       toast.success('Lead marked as handled')
     } catch (err) {
       toast.error(
