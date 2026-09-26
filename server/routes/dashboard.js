@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
-
+const { supabaseAdmin } = require('../lib/supabase');
 const router = express.Router();
 
 // ---------------------------------------------------------------
@@ -100,7 +100,7 @@ router.get('/summary', requireAuth, async (req, res) => {
         .not('won_at', 'is', null)
         .gte('won_at', startOfMonthIso),
 
-      req.supabase
+      supabaseAdmin
         .from('sms_replies')
         .select('id')
         .eq('business_id', businessId)
