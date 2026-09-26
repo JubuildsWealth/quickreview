@@ -1,7 +1,7 @@
 const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
-
+const { supabaseAdmin } = require('../lib/supabase');
 const router = express.Router();
 
 const twilioClient = twilio(
@@ -324,7 +324,7 @@ router.get('/hot-leads', requireAuth, async (req, res) => {
   if (!business) return;
 
   try {
-    const { data, error } = await req.supabase
+   const { data, error } = await supabaseAdmin
       .from('sms_replies')
       .select(`
         id,
@@ -383,7 +383,7 @@ router.post('/hot-leads/:id/handled', requireAuth, async (req, res) => {
   if (!business) return;
 
   try {
-    const { data, error } = await req.supabase
+   const { data, error } = await supabaseAdmin
       .from('sms_replies')
       .update({
         handled_at: new Date().toISOString(),
