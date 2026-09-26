@@ -37,6 +37,10 @@ export default function Customers({ business }) {
 
   const handleAddCustomer = async (e) => {
     e.preventDefault()
+    if (!smsConsent) {
+  toast.error('SMS consent is required before adding this customer.')
+  return
+}
     setSubmitting(true)
     try {
       const { data } = await api.post('/customers', {
@@ -163,6 +167,7 @@ export default function Customers({ business }) {
               <input
                 type="checkbox"
                 id="smsConsent"
+                required
                 checked={smsConsent}
                 onChange={(e) => setSmsConsent(e.target.checked)}
                 className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
