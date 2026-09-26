@@ -1,6 +1,7 @@
 const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
+const { supabaseAdmin } = require('../lib/supabase');
 
 const router = express.Router();
 
@@ -11,10 +12,6 @@ const twilioClient = twilio(
 
 // ---------------------------------------------------------------
 // POST /api/estimates  -  create a new estimate for a customer
-//
-// This is the piece that was missing. The estimateFollowup job
-// reads from this table but nothing was inserting rows, so the
-// automation ran on empty state and never did anything.
 // ---------------------------------------------------------------
 router.post('/', requireAuth, async (req, res) => {
   const { customer_id, amount_cents, description } = req.body;
@@ -26,7 +23,6 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'amount_cents must be a positive number' });
   }
 
-  // Tenant isolation — same pattern as invoices.js.
   const { data: business, error: bizErr } = await req.supabase
     .from('businesses')
     .select('id')
@@ -68,7 +64,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------
-// GET /api/estimates  -  list this business's estimates
+// GET /api/estimates
 // ---------------------------------------------------------------
 router.get('/', requireAuth, async (req, res) => {
   const { data: business, error: bizErr } = await req.supabase
@@ -95,18 +91,16 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------
-// PATCH /api/estimates/:id  -  update status
+// PATCH /api/estimates/:id
 //
-// Body shape:
-//   { status: 'accepted' }           -> customer said yes to the quote
-//   { status: 'declined' }           -> customer said no
-//   { won: true, revenue_cents: N }  -> job completed, records attribution
+// Body shapes:
+//   { status: 'accepted' }
+//   { status: 'declined' }
+//   { won: true, revenue_cents: N }
 //
-// "accepted" and "won" are distinct on purpose:
-//   accepted = customer agreed to the estimate
-//   won      = job completed and revenue confirmed
-// A customer can accept and then ghost you. That's an important
-// distinction for honest attribution numbers.
+// When won === true AND Arova sent at least one follow-up first,
+// we ALSO write to recovery_events so the recovery hero can show
+// the specific event ("$X from Name — after N Arova follow-ups").
 // ---------------------------------------------------------------
 router.patch('/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -133,6 +127,8 @@ router.patch('/:id', requireAuth, async (req, res) => {
     update.declined_at = now;
   }
 
+  let recoveryEventPayload = null;
+
   if (won === true) {
     if (!revenue_cents || revenue_cents <= 0) {
       return res.status(400).json({ error: 'revenue_cents required when marking won' });
@@ -141,18 +137,30 @@ router.patch('/:id', requireAuth, async (req, res) => {
     update.attributed_revenue_cents = revenue_cents;
     update.status = 'accepted';
     update.accepted_at = now;
-    // Attribution is honest: if Arova actually followed up at least once
-    // before the customer said yes, we take credit. Otherwise 'manual'
-    // (the owner closed it themselves; Arova did nothing).
+
     const { data: current } = await req.supabase
       .from('estimates')
-      .select('reminder_count')
+      .select('id, customer_id, description, reminder_count')
       .eq('id', id)
       .eq('business_id', business.id)
       .single();
 
-    update.attribution_source =
-      current && (current.reminder_count || 0) > 0 ? 'arova_followup' : 'manual';
+    const remindersSent = (current && current.reminder_count) || 0;
+    update.attribution_source = remindersSent > 0 ? 'arova_followup' : 'manual';
+
+    // Prepare event payload; we insert it after the estimate update succeeds.
+    if (remindersSent > 0) {
+      recoveryEventPayload = {
+        business_id: business.id,
+        customer_id: current.customer_id,
+        source_type: 'estimate',
+        source_id: current.id,
+        amount_cents: revenue_cents,
+        reminder_count_at_recovery: remindersSent,
+        description: current.description,
+        recovered_at: now,
+      };
+    }
   }
 
   if (Object.keys(update).length === 0) {
@@ -171,15 +179,20 @@ router.patch('/:id', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Estimate not found' });
   }
 
+  if (recoveryEventPayload) {
+    const { error: eventErr } = await supabaseAdmin
+      .from('recovery_events')
+      .insert(recoveryEventPayload);
+    if (eventErr && eventErr.code !== '23505') {
+      console.error('[Estimate won] recovery_events insert failed:', eventErr.message);
+    }
+  }
+
   res.json({ estimate: data });
 });
 
 // ---------------------------------------------------------------
-// POST /api/estimates/:id/remind  -  manual one-click follow-up
-//
-// Same compliance gates as invoices — never text without consent
-// or after opt-out. This is the "Recover this" button behavior
-// for the Opportunity Center.
+// POST /api/estimates/:id/remind
 // ---------------------------------------------------------------
 router.post('/:id/remind', requireAuth, async (req, res) => {
   const { id } = req.params;
