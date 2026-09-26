@@ -22,13 +22,9 @@ export default function NeedsAttention({ onDataChanged }) {
   useEffect(() => {
     loadHotLeads()
 
-    const interval = setInterval(() => {
-      loadHotLeads()
-
-      if (onDataChanged) {
-        onDataChanged()
-      }
-    }, 5000)
+   const interval = setInterval(() => {
+  loadHotLeads()
+}, 5000)
 
     return () => {
       clearInterval(interval)
