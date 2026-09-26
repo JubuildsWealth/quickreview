@@ -193,18 +193,18 @@ export default function NeedsAttention({ onDataChanged }) {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-2 shrink-0">
                   {lead.customer_phone && (
+              <a
                     
-                  
-  href={`tel:${lead.customer_phone}`}
-  ...
+                      href={`tel:${lead.customer_phone}`}
                       className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       <Phone className="w-4 h-4" />
                       Call
                     </a>
                   )}
+ 
 
                   <button
                     type="button"
