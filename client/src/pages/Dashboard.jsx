@@ -161,7 +161,7 @@ export default function Dashboard({ business }) {
         <>
           {/* Day 2: Revenue Recovery Engine visual anchor */}
           <RevenueRecoveryHero summary={summary} loading={summaryLoading} />
-          <NeedsAttention />
+         <NeedsAttention onDataChanged={loadSummary} />
           <OpportunityCenter
             summary={summary}
             loading={summaryLoading}
