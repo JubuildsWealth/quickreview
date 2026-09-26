@@ -15,7 +15,7 @@ const automationRoutes = require('./routes/automations');
 const twilioWebhookRoutes = require('./routes/twilioWebhooks');
 const dashboardRoutes = require('./routes/dashboard');
 const opportunityRoutes = require('./routes/opportunities');
-
+const recoveryRoutes = require('./routes/recovery');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -81,7 +81,7 @@ app.use('/api/stripe', stripeRoutes);
 app.use('/api/twilio', twilioWebhookRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/opportunities', opportunityRoutes);
-
+app.use('/api/recovery', recoveryRoutes);
 // ---------------------------------------------------------------------------
 // HEALTH CHECK
 // ---------------------------------------------------------------------------
