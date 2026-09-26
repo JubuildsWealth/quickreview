@@ -1,6 +1,7 @@
 const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
+const { supabaseAdmin } = require('../lib/supabase');
 
 const router = express.Router();
 
@@ -15,7 +16,6 @@ const twilioClient = twilio(
 router.post('/', requireAuth, async (req, res) => {
   const { customer_id, amount_cents, description, payment_note } = req.body;
 
-  // basic validation
   if (!customer_id) {
     return res.status(400).json({ error: 'customer_id is required' });
   }
@@ -23,7 +23,6 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'amount_cents must be a positive number' });
   }
 
-  // find THIS user's business (tenant isolation - never trust a body-supplied business_id)
   const { data: business, error: bizErr } = await req.supabase
     .from('businesses')
     .select('id')
@@ -34,7 +33,6 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Business not found' });
   }
 
-  // make sure the customer actually belongs to this business
   const { data: customer, error: custErr } = await req.supabase
     .from('customers')
     .select('id')
@@ -79,7 +77,6 @@ router.get('/', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Business not found' });
   }
 
-  // pull invoices + the customer's name/phone so the UI can show who owes
   const { data, error } = await req.supabase
     .from('invoices')
     .select('*, customers ( name, phone )')
@@ -95,6 +92,17 @@ router.get('/', requireAuth, async (req, res) => {
 
 // ---------------------------------------------------------------
 // PATCH /api/invoices/:id/paid  -  mark an invoice paid
+//
+// Attribution rule (honest, defensible):
+//   Arova-attributed  = paid AND reminder_count > 0
+//     (Arova sent at least one reminder before payment landed)
+//   Manual            = paid AND reminder_count = 0
+//     (owner collected without Arova touching this invoice)
+//
+// When Arova-attributed, we also write a durable row to
+// recovery_events so the hero list can show "$X from Name — after
+// N Arova follow-ups". Log-failures don't block the state change:
+// the invoice must be marked paid regardless.
 // ---------------------------------------------------------------
 router.patch('/:id/paid', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -109,19 +117,65 @@ router.patch('/:id/paid', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Business not found' });
   }
 
-  const { data, error } = await req.supabase
+  // Read the invoice first so we know reminder_count for attribution.
+  const { data: current, error: readErr } = await req.supabase
     .from('invoices')
-    .update({ status: 'paid', paid_at: new Date().toISOString() })
+    .select('id, customer_id, amount_cents, description, reminder_count, status')
     .eq('id', id)
-    .eq('business_id', business.id) // can only mark OWN invoices paid
-    .select()
-    .single();
+    .eq('business_id', business.id)
+    .maybeSingle();
 
-  if (error || !data) {
+  if (readErr || !current) {
     return res.status(404).json({ error: 'Invoice not found' });
   }
 
-  res.json({ invoice: data });
+  if (current.status === 'paid') {
+    return res.status(400).json({ error: 'Invoice already marked paid.' });
+  }
+
+  const remindersSent = current.reminder_count || 0;
+  const arovaAttributed = remindersSent > 0;
+  const nowIso = new Date().toISOString();
+
+  const { data: updated, error: updateErr } = await req.supabase
+    .from('invoices')
+    .update({
+      status: 'paid',
+      paid_at: nowIso,
+      attributed_recovered: arovaAttributed,
+    })
+    .eq('id', id)
+    .eq('business_id', business.id)
+    .select()
+    .single();
+
+  if (updateErr || !updated) {
+    return res.status(500).json({ error: updateErr?.message || 'Update failed' });
+  }
+
+  // Write recovery event ONLY when Arova genuinely helped.
+  // Use supabaseAdmin so this side-effect isn't gated by RLS.
+  if (arovaAttributed) {
+    const { error: eventErr } = await supabaseAdmin
+      .from('recovery_events')
+      .insert({
+        business_id: business.id,
+        customer_id: current.customer_id,
+        source_type: 'invoice',
+        source_id: current.id,
+        amount_cents: current.amount_cents,
+        reminder_count_at_recovery: remindersSent,
+        description: current.description,
+        recovered_at: nowIso,
+      });
+
+    if (eventErr && eventErr.code !== '23505') {
+      // 23505 = unique violation — event already exists (double-tap safety)
+      console.error('[Invoice paid] recovery_events insert failed:', eventErr.message);
+    }
+  }
+
+  res.json({ invoice: updated });
 });
 
 // ---------------------------------------------------------------
@@ -140,7 +194,6 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Business not found' });
   }
 
-  // fetch the invoice + the customer it belongs to (scoped to this business)
   const { data: invoice, error: invErr } = await req.supabase
     .from('invoices')
     .select('*, customers ( id, name, phone, sms_consent, opted_out )')
@@ -154,7 +207,6 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
 
   const customer = invoice.customers;
 
-  // same compliance gate as sms.js - never text without consent or after opt-out
   if (!customer.sms_consent) {
     return res.status(403).json({ error: 'This customer has not opted in to receive text messages.' });
   }
@@ -165,7 +217,6 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Customer has no phone number on file.' });
   }
 
-  // build the message. amount_cents -> dollars for display
   const amount = (invoice.amount_cents / 100).toFixed(2);
   const forPart = invoice.description ? ` for ${invoice.description}` : '';
   const payPart = invoice.payment_note ? ` ${invoice.payment_note}.` : '';
@@ -186,7 +237,6 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
     return res.status(500).json({ error: `SMS failed: ${twilioError.message}` });
   }
 
-  // record that we reminded them (bump count + timestamp)
   await req.supabase
     .from('invoices')
     .update({
