@@ -298,24 +298,58 @@ router.post(
           hot_lead_keyword: matchedKeyword,
         });
 
+              // -------------------------------------------------------------
+        // HOT LEAD OWNER SMS NOTIFICATION
         // -------------------------------------------------------------
-        // HOT LEAD NOTIFICATION
-        // -------------------------------------------------------------
-        if (isHotLead) {
+        if (isHotLead && customer?.business_id) {
           const leadIdentity = customer?.name || from;
 
-          // TODO Day 4:
-          // Wire this into a real owner notification provider.
-          // For Day 3 we intentionally log the notification instead of
-          // assuming an email provider or unverified businesses.email field.
-          console.log('🔥 HOT LEAD NOTIFICATION:', {
-            message:
-              `🔥 Hot lead from ${leadIdentity}: ` +
-              `'${originalBody}' — reply in Arova.`,
-            customer_id: customer?.id || null,
-            business_id: customer?.business_id || null,
-            from_phone: from,
-          });
+          try {
+            const { data: business, error: businessError } =
+              await supabaseAdmin
+                .from('businesses')
+                .select('id, name, phone, hot_lead_sms_enabled')
+                .eq('id', customer.business_id)
+                .maybeSingle();
+
+            if (businessError) {
+              throw new Error(
+                `Business lookup for hot lead failed: ${businessError.message}`
+              );
+            }
+
+            if (business?.hot_lead_sms_enabled && business?.phone) {
+              const ownerMessage =
+                `🔥 Arova Hot Lead\n` +
+                `${leadIdentity} replied: "${originalBody}"\n` +
+                `Open Arova to follow up.`;
+
+              const notification = await twilioClient.messages.create({
+                body: ownerMessage,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: business.phone,
+              });
+
+              console.log('🔥 Hot lead owner SMS sent:', {
+                business_id: business.id,
+                customer_id: customer?.id || null,
+                notification_sid: notification.sid,
+              });
+            } else {
+              console.log('Hot lead owner SMS skipped:', {
+                business_id: customer.business_id,
+                reason: !business?.hot_lead_sms_enabled
+                  ? 'notifications disabled'
+                  : 'business phone missing',
+              });
+            }
+          } catch (notificationError) {
+            // Notification failure must never break inbound reply processing.
+            console.error(
+              'Hot lead owner SMS failed:',
+              notificationError.message
+            );
+          }
         }
       }
     } catch (err) {
