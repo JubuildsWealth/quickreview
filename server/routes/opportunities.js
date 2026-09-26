@@ -313,7 +313,7 @@ router.post('/reactivate-batch', requireAuth, async (req, res) => {
   });
 });
 
-
+// ---------------------------------------------------------------
 // GET /api/opportunities/hot-leads
 //
 // Returns unhandled hot SMS replies for the logged-in business.
@@ -324,7 +324,7 @@ router.get('/hot-leads', requireAuth, async (req, res) => {
   if (!business) return;
 
   try {
-   const { data, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('sms_replies')
       .select(`
         id,
@@ -383,7 +383,7 @@ router.post('/hot-leads/:id/handled', requireAuth, async (req, res) => {
   if (!business) return;
 
   try {
-   const { data, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('sms_replies')
       .update({
         handled_at: new Date().toISOString(),
@@ -418,6 +418,142 @@ router.post('/hot-leads/:id/handled', requireAuth, async (req, res) => {
     });
   }
 });
+
+// ---------------------------------------------------------------
+// POST /api/opportunities/hot-leads/:id/reply
+//
+// Owner replies to a hot lead directly from the Needs Attention card.
+// Sends via Twilio (shared Arova number), logs to sms_outbound,
+// respects consent + subscription gating.
+// ---------------------------------------------------------------
+router.post('/hot-leads/:id/reply', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { body } = req.body;
+
+  // Validate message body
+  if (typeof body !== 'string' || !body.trim()) {
+    return res.status(400).json({ error: 'Message body is required' });
+  }
+
+  const trimmed = body.trim();
+
+  if (trimmed.length > 320) {
+    return res
+      .status(400)
+      .json({ error: 'Message is too long. Keep it under 320 characters.' });
+  }
+
+  // Resolve authenticated business (also gives us subscription_status)
+  const business = await getBusiness(req, res);
+  if (!business) return;
+
+  if (business.subscription_status !== 'active') {
+    return res
+      .status(402)
+      .json({ error: 'An active subscription is required to send messages.' });
+  }
+
+  try {
+    // Fetch the hot lead, always scoped to this business (tenant isolation)
+    const { data: reply, error: replyError } = await supabaseAdmin
+      .from('sms_replies')
+      .select('id, business_id, customer_id, from_phone')
+      .eq('id', id)
+      .eq('business_id', business.id)
+      .maybeSingle();
+
+    if (replyError) throw replyError;
+    if (!reply) {
+      return res.status(404).json({ error: 'Hot lead not found' });
+    }
+
+    // Compliance gate — never text an opted-out or non-consented customer
+    let toPhone = reply.from_phone;
+    const customerId = reply.customer_id;
+
+    if (customerId) {
+      const { data: customer, error: customerErr } = await supabaseAdmin
+        .from('customers')
+        .select('id, phone, sms_consent, opted_out')
+        .eq('id', customerId)
+        .eq('business_id', business.id)
+        .maybeSingle();
+
+      if (customerErr) throw customerErr;
+
+      if (customer) {
+        if (customer.opted_out) {
+          return res.status(403).json({
+            error:
+              'This customer has opted out of text messages (replied STOP). You cannot text them.',
+          });
+        }
+        if (!customer.sms_consent) {
+          return res.status(403).json({
+            error: 'This customer has not opted in to receive text messages.',
+          });
+        }
+        if (customer.phone) toPhone = customer.phone;
+      }
+    }
+
+    if (!toPhone) {
+      return res
+        .status(400)
+        .json({ error: 'No phone number on file for this lead.' });
+    }
+
+    // Send via Twilio using the shared Arova number
+    let twilioSid = null;
+
+    try {
+      const twilioMsg = await twilioClient.messages.create({
+        body: trimmed,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: toPhone,
+      });
+      twilioSid = twilioMsg.sid;
+    } catch (twilioError) {
+      return res
+        .status(500)
+        .json({ error: `SMS failed: ${twilioError.message}` });
+    }
+
+    // Log the outbound message
+    const { data: outbound, error: logError } = await supabaseAdmin
+      .from('sms_outbound')
+      .insert({
+        business_id: business.id,
+        customer_id: customerId,
+        to_phone: toPhone,
+        body: trimmed,
+        status: 'sent',
+        twilio_sid: twilioSid,
+        sent_by_user_id: req.user.id,
+        related_sms_reply_id: reply.id,
+      })
+      .select()
+      .single();
+
+    if (logError) {
+      // Message already sent; surface the logging problem but don't 500
+      return res.status(207).json({
+        warning: 'Message sent but failed to log.',
+        detail: logError.message,
+        twilio_sid: twilioSid,
+      });
+    }
+
+    return res.json({ success: true, outbound });
+  } catch (err) {
+    console.error('[Hot Leads Reply] Error:', err.message);
+    return res.status(500).json({ error: 'Failed to send reply' });
+  }
+});
+
+// ---------------------------------------------------------------
+// POST /api/opportunities/mark-missed-call-outcome
+//
 // Body: {
 //   missed_call_id,
 //   outcome: 'booked' | 'dead' | 'replied' | 'no_response',
