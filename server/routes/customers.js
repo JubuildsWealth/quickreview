@@ -204,7 +204,7 @@ router.get('/:id/activity', requireAuth, async (req, res) => {
           id,
           body,
           status,
-          created_at,
+          sent_at,
           related_sms_reply_id
         `)
         .eq('business_id', business.id)
@@ -479,12 +479,12 @@ router.get('/:id/activity', requireAuth, async (req, res) => {
     // Owner outbound replies
     // -------------------------------------------------------------
     for (const message of outbound) {
-      if (!message.created_at) continue;
+     if (!message.sent_at) continue;
 
       activity.push({
         id: `sms-outbound-${message.id}`,
         type: 'business_reply',
-        occurred_at: message.created_at,
+       occurred_at: message.sent_at,
         title: 'Reply sent',
         description: message.body || null,
         amount_cents: null,
