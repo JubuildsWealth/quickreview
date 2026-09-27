@@ -41,13 +41,12 @@ router.get('/summary', requireAuth, async (req, res) => {
     // matches what the automation would actually process.
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
 
-    const [
-           recoveredEventsRes,
+       const [
+      openInvoicesRes,
       openEstimatesRes,
       openMissedCallsRes,
       reactivationCandidatesRes,
-      recoveredInvoicesRes,
-    
+      recoveredEventsRes,
       hotLeadsRes,
     ] = await Promise.all([
       req.supabase
