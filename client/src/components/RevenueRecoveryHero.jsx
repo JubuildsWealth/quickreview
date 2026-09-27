@@ -65,10 +65,10 @@ export default function RevenueRecoveryHero({ summary, loading }) {
         <span className="text-5xl font-semibold tracking-tight text-gray-900 leading-none">
           {formatMoney(openTotal)}
         </span>
-        <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500">
           {hasOpportunities
-            ? 'in pipeline Arova is working'
-            : 'nothing open right now'}
+            ? 'in unresolved estimates and invoices'
+            : 'Add customers and create invoices to start tracking'}
         </span>
       </div>
 
@@ -78,9 +78,13 @@ export default function RevenueRecoveryHero({ summary, loading }) {
             <TrendingUp className="w-4 h-4 text-green-600" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-500">Recovered this month</p>
+                       <p className="text-xs font-medium text-gray-500">Recovered this month</p>
             <p className="text-lg font-semibold text-gray-900">{formatMoney(recovered)}</p>
+            {recovered === 0 && (
+              <p className="text-xs text-gray-400 mt-0.5">Your first Arova recovery shows here</p>
+            )}
           </div>
+        </div>
         </div>
 
         <div className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl">
@@ -94,8 +98,11 @@ export default function RevenueRecoveryHero({ summary, loading }) {
             />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-500">Hot leads waiting</p>
+                       <p className="text-xs font-medium text-gray-500">Hot leads waiting</p>
             <p className="text-lg font-semibold text-gray-900">{hotLeads}</p>
+            {hotLeads === 0 && (
+              <p className="text-xs text-gray-400 mt-0.5">Customers who reply with buying intent</p>
+            )}
           </div>
         </div>
       </div>
