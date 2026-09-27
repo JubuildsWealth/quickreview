@@ -21,11 +21,24 @@ function formatMoney(cents) {
 function PriorityBadge({ priority }) {
   if (priority === 'high') {
     return (
-      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
         High priority
       </span>
     )
   }
+
+  if (priority === 'medium') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+        Needs attention
+      </span>
+    )
+  }
+
+  // Low priority: no badge. Silence is the signal.
+  return null
+}
 
   if (priority === 'medium') {
     return (
