@@ -2,7 +2,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
-
+const { qualifiesForRecovery } = require('../lib/attribution');
 const router = express.Router();
 
 const twilioClient = twilio(
@@ -120,7 +120,7 @@ router.patch('/:id/paid', requireAuth, async (req, res) => {
   // Read the invoice first so we know reminder_count for attribution.
   const { data: current, error: readErr } = await req.supabase
     .from('invoices')
-    .select('id, customer_id, amount_cents, description, reminder_count, status')
+       .select('id, customer_id, amount_cents, description, reminder_count, last_reminded_at, status')
     .eq('id', id)
     .eq('business_id', business.id)
     .maybeSingle();
@@ -133,8 +133,11 @@ router.patch('/:id/paid', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Invoice already marked paid.' });
   }
 
-  const remindersSent = current.reminder_count || 0;
-  const arovaAttributed = remindersSent > 0;
+   const remindersSent = current.reminder_count || 0;
+  const arovaAttributed = qualifiesForRecovery({
+    reminderCount: remindersSent,
+    lastRemindedAt: current.last_reminded_at,
+  });
   const nowIso = new Date().toISOString();
 
   const { data: updated, error: updateErr } = await req.supabase
@@ -142,7 +145,6 @@ router.patch('/:id/paid', requireAuth, async (req, res) => {
     .update({
       status: 'paid',
       paid_at: nowIso,
-      attributed_recovered: arovaAttributed,
     })
     .eq('id', id)
     .eq('business_id', business.id)
