@@ -85,7 +85,7 @@ export default function RevenueRecoveryHero({ summary, loading }) {
             )}
           </div>
         </div>
-        </div>
+        
 
         <div className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl">
           <div
