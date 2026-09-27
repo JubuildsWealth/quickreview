@@ -42,12 +42,12 @@ router.get('/summary', requireAuth, async (req, res) => {
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
 
     const [
-      openInvoicesRes,
+           recoveredEventsRes,
       openEstimatesRes,
       openMissedCallsRes,
       reactivationCandidatesRes,
       recoveredInvoicesRes,
-      wonEstimatesRes,
+    
       hotLeadsRes,
     ] = await Promise.all([
       req.supabase
@@ -82,23 +82,14 @@ router.get('/summary', requireAuth, async (req, res) => {
         .not('last_serviced_at', 'is', null)
         .lte('last_serviced_at', ninetyDaysAgo),
 
-      // Recovered invoices this month = paid + attributed.
-      req.supabase
-        .from('invoices')
-        .select('amount_cents, paid_at')
+           // Recovered this month, sourced from recovery_events (the
+      // single source of truth for Arova-attributed recoveries
+      // across both invoices and estimates).
+      supabaseAdmin
+        .from('recovery_events')
+        .select('amount_cents')
         .eq('business_id', businessId)
-        .eq('status', 'paid')
-        .eq('attributed_recovered', true)
-        .gte('paid_at', startOfMonthIso),
-
-      // Won estimates this month with revenue attributed to Arova.
-      req.supabase
-        .from('estimates')
-        .select('attributed_revenue_cents, won_at')
-        .eq('business_id', businessId)
-        .eq('attribution_source', 'arova_followup')
-        .not('won_at', 'is', null)
-        .gte('won_at', startOfMonthIso),
+        .gte('recovered_at', startOfMonthIso),
 
       supabaseAdmin
         .from('sms_replies')
@@ -143,10 +134,8 @@ router.get('/summary', requireAuth, async (req, res) => {
     const openTotalCents =
       opportunities.invoices.open_cents + opportunities.estimates.open_cents;
 
-    const recoveredThisMonthCents =
-      sumCents(recoveredInvoicesRes.data || [], 'amount_cents') +
-      sumCents(wonEstimatesRes.data || [], 'attributed_revenue_cents');
-
+       const recoveredThisMonthCents =
+      sumCents(recoveredEventsRes.data || [], 'amount_cents');
     res.json({
       opportunities,
       open_total_cents: openTotalCents,
