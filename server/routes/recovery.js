@@ -273,7 +273,7 @@ router.get('/queue', requireAuth, async (req, res) => {
           inactiveDays,
           reminderCount
         ),
-        action_label: 'Follow up',
+                action_label: 'Send reminder',
       };
     });
 
