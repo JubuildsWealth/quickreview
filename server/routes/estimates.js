@@ -2,6 +2,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
+const { qualifiesForRecovery, capRecoveryAmount } = require('../lib/attribution');
 
 const router = express.Router();
 
@@ -134,28 +135,41 @@ router.patch('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'revenue_cents required when marking won' });
     }
     update.won_at = now;
-    update.attributed_revenue_cents = revenue_cents;
+      
     update.status = 'accepted';
     update.accepted_at = now;
 
-    const { data: current } = await req.supabase
+       const { data: current } = await req.supabase
       .from('estimates')
-      .select('id, customer_id, description, reminder_count')
+      .select('id, customer_id, description, reminder_count, last_reminded_at, amount_cents')
       .eq('id', id)
       .eq('business_id', business.id)
       .single();
+       if (!current) {
+      return res.status(404).json({ error: 'Estimate not found' });
+    }
 
-    const remindersSent = (current && current.reminder_count) || 0;
-    update.attribution_source = remindersSent > 0 ? 'arova_followup' : 'manual';
+    // Validate claimed revenue against the original estimate amount.
+    // Rejects typos and inflated numbers before they enter the dashboard.
+    const capResult = capRecoveryAmount(revenue_cents, current.amount_cents);
+    if (!capResult.ok) {
+      return res.status(400).json({ error: capResult.error });
+    }
+
+    const remindersSent = current.reminder_count || 0;
+    const arovaAttributed = qualifiesForRecovery({
+      reminderCount: remindersSent,
+      lastRemindedAt: current.last_reminded_at,
+    });
 
     // Prepare event payload; we insert it after the estimate update succeeds.
-    if (remindersSent > 0) {
+    if (arovaAttributed) {
       recoveryEventPayload = {
         business_id: business.id,
         customer_id: current.customer_id,
         source_type: 'estimate',
         source_id: current.id,
-        amount_cents: revenue_cents,
+        amount_cents: capResult.amountCents,
         reminder_count_at_recovery: remindersSent,
         description: current.description,
         recovered_at: now,
