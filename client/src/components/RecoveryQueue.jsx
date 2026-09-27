@@ -40,20 +40,7 @@ function PriorityBadge({ priority }) {
   return null
 }
 
-  if (priority === 'medium') {
-    return (
-      <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-        Needs attention
-      </span>
-    )
-  }
-
-  return (
-    <span className="inline-flex items-center rounded-full bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-500">
-      Recently active
-    </span>
-  )
-}
+ 
 
 function QueueSkeleton() {
   return (
