@@ -172,7 +172,6 @@ export default function Dashboard({ business }) {
             loading={summaryLoading}
             onDataChanged={loadSummary}
           />
-          <ArovaToday />
 <WeeklyRecoveryReport />
           
           {/* Existing review-request activity, now downshifted to a secondary card */}
