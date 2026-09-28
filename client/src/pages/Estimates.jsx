@@ -161,10 +161,9 @@ export default function Estimates({ business }) {
   }
   const open = estimates.filter((e) => e.status === 'sent')
   const openTotal = open.reduce((sum, e) => sum + e.amount_cents, 0)
-  const wonThisMonth = estimates
+   const wonThisMonth = estimates
     .filter((e) => e.won_at && new Date(e.won_at).getMonth() === new Date().getMonth())
-    .reduce((sum, e) => sum + (e.attributed_revenue_cents || 0), 0)
-
+    .reduce((sum, e) => sum + (e.amount_cents || 0), 0)
   const s = {
     page: { fontFamily: "'Inter', -apple-system, sans-serif", color: '#1d1d1f', maxWidth: 860, margin: '0 auto', padding: '32px 24px' },
     tile: { flex: 1, background: '#f5f5f7', borderRadius: 12, padding: 16 },
@@ -232,10 +231,10 @@ export default function Estimates({ business }) {
                     {isOpen
                       ? `${timeAgo(est.sent_at)} · ${remindedLabel}`
                       : (
-                          <span style={{ color: statusColor(est.status) }}>
+                                                  <span style={{ color: statusColor(est.status) }}>
                             {statusLabel(est.status)}
-                            {isWon && est.attributed_revenue_cents
-                              ? ` · won ${formatMoney(est.attributed_revenue_cents)}`
+                            {isWon && est.amount_cents
+                              ? ` · won ${formatMoney(est.amount_cents)}`
                               : ''}
                           </span>
                         )}
