@@ -161,6 +161,7 @@ export default function Dashboard({ business }) {
         </div>
       ) : (
         <>
+          <ArovaToday />
           {/* Day 2: Revenue Recovery Engine visual anchor */}
           <RevenueRecoveryHero summary={summary} loading={summaryLoading} />
           <RecoveryQueue onDataChanged={loadSummary} />
