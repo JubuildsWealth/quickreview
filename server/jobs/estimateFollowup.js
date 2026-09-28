@@ -251,7 +251,7 @@ async function runEstimateFollowups() {
     const language = (customer.language || 'en').toLowerCase().slice(0, 2);
     const message = messages[language] || messages.en;
 
-    try {
+      try {
       const twilioMessage = await twilioClient.messages.create({
         body: message,
         from: process.env.TWILIO_PHONE_NUMBER,
@@ -259,6 +259,27 @@ async function runEstimateFollowups() {
       });
 
       const remindedAt = new Date().toISOString();
+
+      // Log the outbound SMS. Non-fatal if this fails —
+      // the estimate update below is what governs retry safety.
+      const { error: logError } = await supabaseAdmin
+        .from('sms_outbound')
+        .insert({
+          business_id: estimate.business_id,
+          customer_id: estimate.customer_id,
+          to_phone: customer.phone,
+          body: message,
+          twilio_sid: twilioMessage.sid,
+          status: 'sent',
+          source_type: 'estimate_followup_auto',
+        });
+
+      if (logError) {
+        console.error(
+          `[Estimate Follow-Up] SMS sent, but failed to log to sms_outbound for ${estimate.id}:`,
+          logError.message
+        );
+      }
 
       // Record the successful follow-up.
       const { error: updateError } = await supabaseAdmin
