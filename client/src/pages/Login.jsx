@@ -50,7 +50,7 @@ export default function Login() {
           </h1>
 
           <p className="text-sm text-gray-500 mt-2">
-            Get more Google reviews for your trade business.
+            Get paid for every job, without chasing customers.
           </p>
         </div>
 
@@ -63,7 +63,7 @@ export default function Login() {
             <p className="text-sm leading-5 text-gray-500 mt-1.5">
               {mode === 'login'
                 ? 'Log in to manage your customers and follow-ups.'
-                : 'Start collecting more reviews from your customers.'}
+                : 'Set up in minutes. Arova starts following up for you today.'}
             </p>
           </div>
 

@@ -375,7 +375,9 @@ router.get('/weekly-report', requireAuth, async (req, res) => {
   .from('sms_replies')
   .select('id')
   .eq('business_id', businessId)
-  .eq('is_hot_lead', true),
+  .eq('is_hot_lead', true)
+  .gte('received_at', startIso)
+  .lt('received_at', endIso),
     ]);
 
     if (recoveredRes.error) throw recoveredRes.error;

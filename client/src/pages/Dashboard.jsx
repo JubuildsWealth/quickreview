@@ -51,6 +51,7 @@ function ChecklistStep({ done, title, subtitle, to, cta }) {
 export default function Dashboard({ business }) {
   const [stats, setStats] = useState(null)
   const [customerCount, setCustomerCount] = useState(null)
+  const [invoices, setInvoices] = useState([])
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [summaryLoading, setSummaryLoading] = useState(true)
@@ -77,12 +78,14 @@ export default function Dashboard({ business }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const [statsRes, custRes] = await Promise.all([
+        const [statsRes, custRes, invRes] = await Promise.all([
           api.get('/sms/stats'),
           api.get('/customers'),
+          api.get('/invoices'),
         ])
         setStats(statsRes.data.stats)
         setCustomerCount(custRes.data.customers.length)
+        setInvoices(invRes.data.invoices)
       } catch (err) {
         toast.error('Failed to load dashboard data')
       } finally {
@@ -97,12 +100,12 @@ export default function Dashboard({ business }) {
   const sentThisMonth = stats?.sent_this_month ?? 0
   const hasReviewActivity = totalSent > 0
   const hasCustomer = (customerCount ?? 0) > 0
-  const hasReviewLink = !!business.google_review_link
-  const hasSent = totalSent > 0
+  const hasInvoice = invoices.length > 0
+  const hasReminded = invoices.some((i) => (i.reminder_count || 0) > 0)
 
-  // Truly new = no customers AND no review activity yet. Once they add a
-  // customer we drop the setup checklist and show the recovery engine.
-  const isNewUser = !loading && customerCount === 0 && totalSent === 0
+  // New = Arova hasn't texted anyone yet (no invoice reminder and no review
+  // request). The checklist stays up until step 3 so users reach first value.
+  const isNewUser = !loading && !hasReminded && totalSent === 0
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
@@ -133,30 +136,30 @@ export default function Dashboard({ business }) {
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-gray-900">Get started with Arova</h2>
             <p className="text-sm text-gray-500 mt-1.5">
-              Three quick steps and you’ll be collecting reviews in a couple of minutes.
+              Three quick steps and Arova sends its first text for you.
             </p>
           </div>
           <div className="space-y-3">
             <ChecklistStep
-              done={hasReviewLink}
-              title="Add your Google review link"
-              subtitle="So customers can leave you a review in one tap"
-              to="/settings"
-              cta="Add link"
-            />
-            <ChecklistStep
               done={hasCustomer}
-              title="Add your first customer"
-              subtitle="Takes about 10 seconds"
+              title="Add a customer who owes you money"
+              subtitle="Name, cell number, and their OK to get texts"
               to="/customers"
               cta="Add customer"
             />
             <ChecklistStep
-              done={hasSent}
-              title="Send your first review request"
-              subtitle="Arova texts them a link to leave a review"
-              to="/customers"
-              cta="Send request"
+              done={hasInvoice}
+              title="Log what they owe"
+              subtitle="The amount, the job, and how they can pay you"
+              to="/invoices"
+              cta="Add invoice"
+            />
+            <ChecklistStep
+              done={hasReminded}
+              title="Let Arova text them a reminder"
+              subtitle="One tap. Arova sends it, and their reply shows up on your dashboard."
+              to="/invoices"
+              cta="Remind now"
             />
           </div>
         </div>
@@ -172,7 +175,6 @@ export default function Dashboard({ business }) {
             loading={summaryLoading}
             onDataChanged={loadSummary}
           />
-          <ArovaToday />
 <WeeklyRecoveryReport />
           
           {/* Existing review-request activity, now downshifted to a secondary card */}
