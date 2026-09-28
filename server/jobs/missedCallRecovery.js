@@ -177,12 +177,33 @@ async function handleMissedCall({
 
   const message = messages[language] || messages.en;
 
-  try {
+   try {
     const twilioMessage = await twilioClient.messages.create({
       body: message,
       from: arovaPhone,   // reply from the same Arova number they called
       to: callerPhone,
     });
+
+    // Log the outbound SMS. Non-fatal if this fails —
+    // the missed_calls log below is what governs duplicate protection.
+    const { error: logError } = await supabaseAdmin
+      .from('sms_outbound')
+      .insert({
+        business_id: businessId,
+        customer_id: existingCustomer ? existingCustomer.id : null,
+        to_phone: callerPhone,
+        body: message,
+        twilio_sid: twilioMessage.sid,
+        status: 'sent',
+        source_type: 'missed_call_reply',
+      });
+
+    if (logError) {
+      console.error(
+        `[Missed Call] SMS sent, but failed to log to sms_outbound for ${callSid}:`,
+        logError.message
+      );
+    }
 
     await logMissedCall({
       businessId,
