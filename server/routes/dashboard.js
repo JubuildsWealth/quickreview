@@ -308,4 +308,146 @@ router.get('/today', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to load Arova Today' });
   }
 });
+// ---------------------------------------------------------------
+// GET /api/dashboard/weekly-report
+//
+// Weekly proof-of-value report.
+// Shows:
+//   1. Revenue Arova recovered this week
+//   2. Automated follow-ups Arova handled
+//   3. Hot leads surfaced during the week
+//
+// Read-only. recovery_events is the source of truth for revenue.
+// sms_outbound is the source of truth for automated actions.
+// ---------------------------------------------------------------
+router.get('/weekly-report', requireAuth, async (req, res) => {
+  try {
+    const { data: business, error: bizErr } = await req.supabase
+      .from('businesses')
+      .select('id, name')
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (bizErr || !business) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    const businessId = business.id;
+
+    // Rolling 7-day window for V1.
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+
+    const [
+      recoveredRes,
+      outboundRes,
+      hotLeadsRes,
+    ] = await Promise.all([
+      // Revenue actually recovered after Arova follow-up.
+      supabaseAdmin
+        .from('recovery_events')
+        .select('amount_cents')
+        .eq('business_id', businessId)
+        .gte('recovered_at', startIso)
+        .lt('recovered_at', endIso),
+
+      // Automated work only. Manual sends are intentionally excluded.
+      supabaseAdmin
+        .from('sms_outbound')
+        .select('source_type')
+        .eq('business_id', businessId)
+        .gte('sent_at', startIso)
+        .lt('sent_at', endIso)
+        .in('source_type', [
+          'invoice_reminder_auto',
+          'estimate_followup_auto',
+          'customer_reactivation',
+          'missed_call_reply',
+          'review_followup',
+        ]),
+
+      // Hot leads surfaced during this reporting window.
+      // These count whether or not the contractor has since handled them.
+      supabaseAdmin
+        .from('sms_replies')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('is_hot_lead', true)
+        .gte('created_at', startIso)
+        .lt('created_at', endIso),
+    ]);
+
+    if (recoveredRes.error) throw recoveredRes.error;
+    if (outboundRes.error) throw outboundRes.error;
+    if (hotLeadsRes.error) throw hotLeadsRes.error;
+
+    const recoveredCents = (recoveredRes.data || []).reduce(
+      (total, row) => total + (row.amount_cents || 0),
+      0
+    );
+
+    const followups = {
+      invoice_reminders: 0,
+      estimate_followups: 0,
+      customer_reactivations: 0,
+      missed_call_replies: 0,
+      review_followups: 0,
+    };
+
+    for (const row of outboundRes.data || []) {
+      switch (row.source_type) {
+        case 'invoice_reminder_auto':
+          followups.invoice_reminders += 1;
+          break;
+
+        case 'estimate_followup_auto':
+          followups.estimate_followups += 1;
+          break;
+
+        case 'customer_reactivation':
+          followups.customer_reactivations += 1;
+          break;
+
+        case 'missed_call_reply':
+          followups.missed_call_replies += 1;
+          break;
+
+        case 'review_followup':
+          followups.review_followups += 1;
+          break;
+      }
+    }
+
+    const totalActions =
+      followups.invoice_reminders +
+      followups.estimate_followups +
+      followups.customer_reactivations +
+      followups.missed_call_replies +
+      followups.review_followups;
+
+    res.json({
+      business_name: business.name,
+
+      period: {
+        start: startIso,
+        end: endIso,
+      },
+
+      recovered_cents: recoveredCents,
+
+      handled: {
+        total_actions: totalActions,
+        ...followups,
+      },
+
+      hot_leads_surfaced: (hotLeadsRes.data || []).length,
+    });
+  } catch (err) {
+    console.error('[Weekly Recovery Report] Error:', err.message);
+    res.status(500).json({ error: 'Failed to load weekly recovery report' });
+  }
+});
 module.exports = router;
