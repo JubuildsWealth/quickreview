@@ -172,7 +172,9 @@ export default function Dashboard({ business }) {
             loading={summaryLoading}
             onDataChanged={loadSummary}
           />
+          <ArovaToday />
 <WeeklyRecoveryReport />
+          
           {/* Existing review-request activity, now downshifted to a secondary card */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
