@@ -310,5 +310,90 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
 
   res.json({ ok: true });
 });
+// ---------------------------------------------------------------
+// POST /api/estimates/:id/revert-won  -  undo a "mark won"
+//
+// Puts the estimate back in the open-work state as if the win
+// never happened:
+//   - status back to 'sent'
+//   - clear won_at and accepted_at
+//   - delete the recovery_events row so the dashboard total
+//     drops back down
+//
+// reminder_count is intentionally NOT reset — those SMS were
+// really sent and shouldn't be pretended away. The cron's own
+// max-reminder cap prevents runaway texting.
+//
+// Always available — a contractor might not notice the mistake
+// until they see the recovery total looks off weeks later.
+// ---------------------------------------------------------------
+router.post('/:id/revert-won', requireAuth, async (req, res) => {
+  const { id } = req.params;
 
+  const { data: business, error: bizErr } = await req.supabase
+    .from('businesses')
+    .select('id')
+    .eq('user_id', req.user.id)
+    .single();
+
+  if (bizErr || !business) {
+    return res.status(404).json({ error: 'Business not found' });
+  }
+
+  // Confirm the estimate exists, belongs to this business, and
+  // is actually in a won state. Refuse to "revert" something that
+  // was never won.
+  const { data: current, error: readErr } = await req.supabase
+    .from('estimates')
+    .select('id, won_at')
+    .eq('id', id)
+    .eq('business_id', business.id)
+    .maybeSingle();
+
+  if (readErr || !current) {
+    return res.status(404).json({ error: 'Estimate not found' });
+  }
+
+  if (!current.won_at) {
+    return res.status(400).json({ error: 'This estimate is not marked as won.' });
+  }
+
+  // Reset the estimate to open-work state.
+  const { data: updated, error: updateErr } = await req.supabase
+    .from('estimates')
+    .update({
+      status: 'sent',
+      won_at: null,
+      accepted_at: null,
+    })
+    .eq('id', id)
+    .eq('business_id', business.id)
+    .select()
+    .single();
+
+  if (updateErr || !updated) {
+    return res.status(500).json({ error: updateErr?.message || 'Update failed' });
+  }
+
+  // Remove the recovery event so the dashboard number drops.
+  // Uses supabaseAdmin because recovery_events writes bypass RLS
+  // by the same pattern used elsewhere in this file.
+  const { error: deleteErr } = await supabaseAdmin
+    .from('recovery_events')
+    .delete()
+    .eq('business_id', business.id)
+    .eq('source_type', 'estimate')
+    .eq('source_id', id);
+
+  if (deleteErr) {
+    // Non-fatal: the estimate is already reverted. Log for
+    // investigation but don't fail the request.
+    console.error(
+      `[Estimate revert-won] recovery_events delete failed for ${id}:`,
+      deleteErr.message
+    );
+  }
+
+  res.json({ estimate: updated });
+});
 module.exports = router;
