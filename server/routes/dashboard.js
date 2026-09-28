@@ -371,13 +371,11 @@ router.get('/weekly-report', requireAuth, async (req, res) => {
 
       // Hot leads surfaced during this reporting window.
       // These count whether or not the contractor has since handled them.
-      supabaseAdmin
-        .from('sms_replies')
-        .select('id')
-        .eq('business_id', businessId)
-        .eq('is_hot_lead', true)
-        .gte('created_at', startIso)
-        .lt('created_at', endIso),
+    supabaseAdmin
+  .from('sms_replies')
+  .select('id')
+  .eq('business_id', businessId)
+  .eq('is_hot_lead', true),
     ]);
 
     if (recoveredRes.error) throw recoveredRes.error;
