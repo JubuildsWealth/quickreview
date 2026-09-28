@@ -144,7 +144,21 @@ export default function Estimates({ business }) {
       setBusyId(null)
     }
   }
-
+  const revertWon = async (id) => {
+    if (!window.confirm('Undo this win? The recovery total will drop by this amount, and the estimate goes back to Open.')) {
+      return
+    }
+    setBusyId(id)
+    try {
+      await api.post(`/estimates/${id}/revert-won`)
+      toast.success('Win undone. Estimate is back in Open.')
+      load()
+    } catch (e) {
+      toast.error(e?.response?.data?.error || 'Could not undo')
+    } finally {
+      setBusyId(null)
+    }
+  }
   const open = estimates.filter((e) => e.status === 'sent')
   const openTotal = open.reduce((sum, e) => sum + e.amount_cents, 0)
   const wonThisMonth = estimates
@@ -255,9 +269,34 @@ export default function Estimates({ business }) {
                   >
                     <DollarSign size={13} /> Mark won
                   </button>
+                              ) : isWon ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: statusColor(est.status) }}>
+                      <Check size={15} style={{ verticalAlign: 'middle' }} /> Won
+                    </div>
+                    <button
+                      onClick={() => revertWon(est.id)}
+                      disabled={busyId === est.id}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#86868b',
+                        fontSize: 12,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        textDecoration: 'underline',
+                        textUnderlineOffset: 2,
+                      }}
+                      title="Undo this win"
+                    >
+                      Undo
+                    </button>
+                  </div>
                 ) : (
                   <div style={{ fontSize: 13, fontWeight: 500, color: statusColor(est.status) }}>
-                    {isWon ? <><Check size={15} style={{ verticalAlign: 'middle' }} /> Won</> : statusLabel(est.status)}
+                    {statusLabel(est.status)}
                   </div>
                 )}
               </div>
