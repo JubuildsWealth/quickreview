@@ -161,9 +161,15 @@ export default function Estimates({ business }) {
   }
   const open = estimates.filter((e) => e.status === 'sent')
   const openTotal = open.reduce((sum, e) => sum + e.amount_cents, 0)
-   const wonThisMonth = estimates
-    .filter((e) => e.won_at && new Date(e.won_at).getMonth() === new Date().getMonth())
-    .reduce((sum, e) => sum + (e.amount_cents || 0), 0)
+  const now = new Date()
+const wonThisMonth = estimates
+  .filter((e) => {
+    if (!e.won_at) return false
+    const wonDate = new Date(e.won_at)
+    return wonDate.getMonth() === now.getMonth() &&
+           wonDate.getFullYear() === now.getFullYear()
+  })
+  .reduce((sum, e) => sum + (e.amount_cents || 0), 0)
   const s = {
     page: { fontFamily: "'Inter', -apple-system, sans-serif", color: '#1d1d1f', maxWidth: 860, margin: '0 auto', padding: '32px 24px' },
     tile: { flex: 1, background: '#f5f5f7', borderRadius: 12, padding: 16 },
