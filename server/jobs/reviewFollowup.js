@@ -183,7 +183,7 @@ async function runReviewFollowups() {
 
     const message = messages[customer.language] || messages.en;
 
-    try {
+       try {
       const twilioMessage = await twilioClient.messages.create({
         body: message,
         from: process.env.TWILIO_PHONE_NUMBER,
@@ -191,6 +191,27 @@ async function runReviewFollowups() {
       });
 
       const sentAt = new Date().toISOString();
+
+      // Log the outbound SMS. Non-fatal if this fails —
+      // the review_requests update below is what governs claim safety.
+      const { error: logError } = await supabaseAdmin
+        .from('sms_outbound')
+        .insert({
+          business_id: request.business_id,
+          customer_id: request.customer_id,
+          to_phone: customer.phone,
+          body: message,
+          twilio_sid: twilioMessage.sid,
+          status: 'sent',
+          source_type: 'review_followup',
+        });
+
+      if (logError) {
+        console.error(
+          `[Review Follow-Up] SMS sent, but failed to log to sms_outbound for ${request.id}:`,
+          logError.message
+        );
+      }
 
       const { error: updateError } = await supabaseAdmin
         .from('review_requests')
