@@ -146,5 +146,166 @@ router.get('/summary', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to load dashboard summary' });
   }
 });
+// ---------------------------------------------------------------
+// GET /api/dashboard/today
+//
+// The "Arova Today" morning brief. Answers three questions in
+// one payload:
+//   1. What needs your attention right now?
+//   2. What did Arova handle automatically today?
+//   3. What's the total money on the table right now?
+//
+// Read-only, safe to call on every dashboard render.
+// ---------------------------------------------------------------
+router.get('/today', requireAuth, async (req, res) => {
+  try {
+    const { data: business, error: bizErr } = await req.supabase
+      .from('businesses')
+      .select('id, name')
+      .eq('user_id', req.user.id)
+      .single();
 
+    if (bizErr || !business) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    const businessId = business.id;
+
+    // "Today" = midnight local server time.
+    // Small caveat: this is server timezone (UTC on Railway),
+    // not the contractor's local timezone. Acceptable for V1;
+    // in V1.1 we pass a user tz offset.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayIso = startOfToday.toISOString();
+
+    // Priority thresholds mirror /api/recovery/queue: 7+ days = high.
+    const sevenDaysAgo = new Date(
+      Date.now() - 7 * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const [
+      hotLeadsRes,
+      coldEstimatesRes,
+      overdueInvoicesRes,
+      handledTodayRes,
+    ] = await Promise.all([
+      // Hot leads waiting = unresolved replies flagged is_hot_lead
+      supabaseAdmin
+        .from('sms_replies')
+        .select('id')
+        .eq('business_id', businessId)
+        .eq('is_hot_lead', true)
+        .is('handled_at', null),
+
+      // Cold estimates = status 'sent' AND (last touch OR sent_at) >= 7 days ago
+      supabaseAdmin
+        .from('estimates')
+        .select('amount_cents, last_reminded_at, sent_at')
+        .eq('business_id', businessId)
+        .eq('status', 'sent'),
+
+      // Overdue invoices = unpaid AND (last touch OR created_at) >= 7 days ago
+      supabaseAdmin
+        .from('invoices')
+        .select('amount_cents, last_reminded_at, created_at')
+        .eq('business_id', businessId)
+        .neq('status', 'paid'),
+
+      // Everything Arova handled automatically today.
+      // Filters out manual sends by excluding *_manual source types.
+      supabaseAdmin
+        .from('sms_outbound')
+        .select('source_type')
+        .eq('business_id', businessId)
+        .gte('sent_at', startOfTodayIso)
+        .in('source_type', [
+          'invoice_reminder_auto',
+          'estimate_followup_auto',
+          'customer_reactivation',
+          'missed_call_reply',
+          'review_followup',
+        ]),
+    ]);
+
+    if (hotLeadsRes.error) throw hotLeadsRes.error;
+    if (coldEstimatesRes.error) throw coldEstimatesRes.error;
+    if (overdueInvoicesRes.error) throw overdueInvoicesRes.error;
+    if (handledTodayRes.error) throw handledTodayRes.error;
+
+    // Filter cold estimates in JS to keep query readable.
+    // "Cold" = 7+ days since either last reminder or original send.
+    const coldEstimates = (coldEstimatesRes.data || []).filter((e) => {
+      const lastActivity = e.last_reminded_at || e.sent_at;
+      return lastActivity && lastActivity <= sevenDaysAgo;
+    });
+
+    const overdueInvoices = (overdueInvoicesRes.data || []).filter((i) => {
+      const lastActivity = i.last_reminded_at || i.created_at;
+      return lastActivity && lastActivity <= sevenDaysAgo;
+    });
+
+    const sumCents = (rows) =>
+      rows.reduce((total, row) => total + (row.amount_cents || 0), 0);
+
+    const coldEstimatesCents = sumCents(coldEstimates);
+    const overdueInvoicesCents = sumCents(overdueInvoices);
+    const attentionTotalCents = coldEstimatesCents + overdueInvoicesCents;
+
+    // Count Arova's automated actions today, grouped by source.
+    const handledCounts = {
+      invoice_reminders: 0,
+      estimate_followups: 0,
+      customer_reactivations: 0,
+      missed_call_replies: 0,
+      review_followups: 0,
+    };
+
+    for (const row of handledTodayRes.data || []) {
+      switch (row.source_type) {
+        case 'invoice_reminder_auto':
+          handledCounts.invoice_reminders += 1;
+          break;
+        case 'estimate_followup_auto':
+          handledCounts.estimate_followups += 1;
+          break;
+        case 'customer_reactivation':
+          handledCounts.customer_reactivations += 1;
+          break;
+        case 'missed_call_reply':
+          handledCounts.missed_call_replies += 1;
+          break;
+        case 'review_followup':
+          handledCounts.review_followups += 1;
+          break;
+      }
+    }
+
+    const handledTotal =
+      handledCounts.invoice_reminders +
+      handledCounts.estimate_followups +
+      handledCounts.customer_reactivations +
+      handledCounts.missed_call_replies +
+      handledCounts.review_followups;
+
+    res.json({
+      business_name: business.name,
+      attention: {
+        total_cents: attentionTotalCents,
+        hot_leads_count: (hotLeadsRes.data || []).length,
+        cold_estimates_count: coldEstimates.length,
+        cold_estimates_cents: coldEstimatesCents,
+        overdue_invoices_count: overdueInvoices.length,
+        overdue_invoices_cents: overdueInvoicesCents,
+      },
+      handled_today: {
+        total_actions: handledTotal,
+        ...handledCounts,
+      },
+    });
+  } catch (err) {
+    console.error('[Dashboard Today] Error:', err.message);
+    res.status(500).json({ error: 'Failed to load Arova Today' });
+  }
+});
 module.exports = router;
