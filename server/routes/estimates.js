@@ -267,14 +267,36 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
   const language = (customer.language || 'en').toLowerCase().slice(0, 2);
   const message = messages[language] || messages.en;
 
+   let twilioMessage;
   try {
-    await twilioClient.messages.create({
+    twilioMessage = await twilioClient.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
       to: customer.phone,
     });
   } catch (twilioError) {
     return res.status(500).json({ error: `SMS failed: ${twilioError.message}` });
+  }
+
+  // Log the outbound SMS. Non-fatal — the estimate update below
+  // still runs even if this fails.
+  const { error: logError } = await supabaseAdmin
+    .from('sms_outbound')
+    .insert({
+      business_id: business.id,
+      customer_id: estimate.customer_id,
+      to_phone: customer.phone,
+      body: message,
+      twilio_sid: twilioMessage.sid,
+      status: 'sent',
+      source_type: 'estimate_followup_manual',
+    });
+
+  if (logError) {
+    console.error(
+      `[Estimate manual remind] SMS sent, but failed to log to sms_outbound for ${id}:`,
+      logError.message
+    );
   }
 
   await req.supabase
