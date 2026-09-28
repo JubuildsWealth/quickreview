@@ -4,11 +4,11 @@ import toast from 'react-hot-toast'
 import { Check, Star, CreditCard } from 'lucide-react'
 
 const features = [
-  'Unlimited SMS review requests',
-  'Customer contact management',
-  'Review request tracking & analytics',
-  'Personalized messages with your business name',
-  'Works with any Google Business profile',
+  'Invoice reminders that get you paid faster, with no awkward phone calls',
+  "Estimate follow-ups so bids don't go cold",
+  'Instant text-back when you miss a call, before they call the next guy',
+  "Hot lead alerts when a customer's ready to book, so you call them first",
+  'A weekly report showing exactly how much money Arova brought back',
 ]
 
 export default function Subscribe({ business }) {
@@ -40,11 +40,11 @@ export default function Subscribe({ business }) {
           </p>
 
           <h1 className="text-2xl font-semibold tracking-[-0.035em] text-gray-950">
-            Start getting reviews
+            Stop losing money to unpaid invoices, cold estimates, and missed calls
           </h1>
 
           <p className="text-sm text-gray-500 mt-2">
-            One simple plan. Cancel any time.
+            Arova texts your customers for you, automatically, so more jobs turn into paychecks.
           </p>
         </div>
 
@@ -56,12 +56,16 @@ export default function Subscribe({ business }) {
 
             <div className="flex items-end gap-1.5 mt-3">
               <span className="text-4xl font-semibold tracking-[-0.045em] text-gray-950">
-                $97
+                $99
               </span>
               <span className="text-sm text-gray-500 mb-1">
                 /month
               </span>
             </div>
+
+            <p className="text-xs font-medium text-brand-700 mt-2">
+              Founding member price · first 10 customers
+            </p>
           </div>
 
           <ul className="space-y-4 py-6">
@@ -85,16 +89,16 @@ export default function Subscribe({ business }) {
             className="w-full h-11 bg-brand-600 text-white rounded-xl text-sm font-semibold tracking-[-0.01em] hover:bg-brand-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
           >
             <CreditCard className="w-4 h-4" />
-            {loading ? 'Redirecting to checkout…' : 'Subscribe now — $97/month'}
+            {loading ? 'Redirecting to checkout…' : 'Start getting paid — $99/month'}
           </button>
 
           <p className="text-xs leading-5 text-gray-400 text-center mt-4">
-            Powered by Stripe. Your card is charged $97 monthly. Cancel any time from your billing portal.
+            Powered by Stripe. Your card is charged $99 monthly. Cancel any time from your billing portal.
           </p>
         </div>
 
         <p className="text-xs font-medium tracking-[-0.01em] text-gray-400 text-center mt-5">
-          Built to help you get more customers.
+          Built to get you paid for every job you do.
         </p>
       </div>
     </div>
