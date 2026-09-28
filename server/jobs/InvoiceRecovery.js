@@ -244,7 +244,7 @@ async function runInvoiceRecovery() {
 
     const message = messages[customer.language] || messages.en;
 
-    try {
+      try {
       const twilioMessage = await twilioClient.messages.create({
         body: message,
         from: process.env.TWILIO_PHONE_NUMBER,
@@ -252,6 +252,27 @@ async function runInvoiceRecovery() {
       });
 
       const remindedAt = new Date().toISOString();
+
+      // Log the outbound SMS. Non-fatal if this fails —
+      // the invoice update below is what governs retry safety.
+      const { error: logError } = await supabaseAdmin
+        .from('sms_outbound')
+        .insert({
+          business_id: invoice.business_id,
+          customer_id: invoice.customer_id,
+          to_phone: customer.phone,
+          body: message,
+          twilio_sid: twilioMessage.sid,
+          status: 'sent',
+          source_type: 'invoice_reminder_auto',
+        });
+
+      if (logError) {
+        console.error(
+          `[Invoice Recovery] SMS sent, but failed to log to sms_outbound for ${invoice.id}:`,
+          logError.message
+        );
+      }
 
       // Record the successful reminder.
       const { error: updateError } = await supabaseAdmin
