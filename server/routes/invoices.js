@@ -229,14 +229,36 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
     payPart +
     ` Reply STOP to opt out.`;
 
+   let twilioMessage;
   try {
-    await twilioClient.messages.create({
+    twilioMessage = await twilioClient.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
       to: customer.phone,
     });
   } catch (twilioError) {
     return res.status(500).json({ error: `SMS failed: ${twilioError.message}` });
+  }
+
+  // Log the outbound SMS. Non-fatal — the invoice update below
+  // still runs even if this fails.
+  const { error: logError } = await supabaseAdmin
+    .from('sms_outbound')
+    .insert({
+      business_id: business.id,
+      customer_id: invoice.customer_id,
+      to_phone: customer.phone,
+      body: message,
+      twilio_sid: twilioMessage.sid,
+      status: 'sent',
+      source_type: 'invoice_reminder_manual',
+    });
+
+  if (logError) {
+    console.error(
+      `[Invoice manual remind] SMS sent, but failed to log to sms_outbound for ${id}:`,
+      logError.message
+    );
   }
 
   await req.supabase
