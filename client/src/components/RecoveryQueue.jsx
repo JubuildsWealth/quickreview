@@ -63,7 +63,34 @@ function needsHuman(item) {
 
   return false
 }
+function getNextBestAction(item) {
+  const days = item.days_since_activity || 0
+  const nudges = item.reminder_count || 0
+  const amount = item.amount_cents || 0
 
+  // Arova has already tried repeatedly. Human intervention is next.
+  if (nudges >= 2 && days >= 7) {
+    return 'Call today'
+  }
+
+  // High-value opportunities deserve direct human attention.
+  if (item.priority === 'high' && amount >= 100000) {
+    return 'Call today'
+  }
+
+  // Aging opportunity that has not been contacted yet.
+  if (nudges === 0 && days >= 3) {
+    return 'Send nudge'
+  }
+
+  // Recently contacted. Give the customer time to respond.
+  if (nudges > 0 && days < 3) {
+    return 'Wait for reply'
+  }
+
+  // New opportunities do not need immediate intervention.
+  return 'Monitor'
+}
 function QueueSkeleton() {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 mb-6 overflow-hidden">
