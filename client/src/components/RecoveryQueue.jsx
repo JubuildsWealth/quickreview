@@ -124,6 +124,7 @@ function QueueSkeleton() {
 
 function QueueItem({ item, isSending, sendingId, onFollowUp }) {
   const Icon = item.type === 'estimate' ? FileText : Receipt
+  const nextAction = getNextBestAction(item)
 
   return (
     <div className="px-6 py-5">
@@ -159,6 +160,12 @@ function QueueItem({ item, isSending, sendingId, onFollowUp }) {
                 {item.reason}
               </span>
             </div>
+            <div className="flex items-center gap-1.5 mt-2">
+  <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+  <span className="text-xs font-medium text-gray-700">
+    Next: {nextAction}
+  </span>
+</div>
           </div>
         </div>
 
