@@ -180,7 +180,7 @@ export default function Dashboard({ business }) {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="font-semibold text-gray-900">Review requests</h2>
-                <p className="text-sm text-gray-500 mt-0.5">Building your Google presence</p>
+                <p className="text-sm text-gray-500 mt-0.5">Reviews that bring customers back</p>
               </div>
               <Link
                 to="/customers"
