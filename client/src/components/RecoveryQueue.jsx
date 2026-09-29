@@ -122,7 +122,13 @@ function QueueSkeleton() {
   )
 }
 
-function QueueItem({ item, isSending, sendingId, onFollowUp }) {
+function QueueItem({
+  item,
+  isSending,
+  sendingId,
+  onFollowUp,
+  isAutomated = false,
+}) {
   const Icon = item.type === 'estimate' ? FileText : Receipt
   const nextAction = getNextBestAction(item)
 
@@ -183,16 +189,29 @@ function QueueItem({ item, isSending, sendingId, onFollowUp }) {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => onFollowUp(item)}
-            disabled={isSending || !!sendingId}
-            className="inline-flex items-center justify-center gap-2 min-w-[118px] px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Send className="w-3.5 h-3.5" />
+         {isAutomated ? (
+  <div className="min-w-[160px] lg:text-right">
+    <div className="inline-flex items-center gap-2 text-sm font-medium text-gray-600">
+      <Sparkles className="w-3.5 h-3.5 text-gray-400" />
+      <span>Arova is handling this</span>
+    </div>
 
-            {isSending ? 'Sending...' : item.action_label}
-          </button>
+    <p className="text-xs text-gray-400 mt-1">
+      Follow-up runs automatically
+    </p>
+  </div>
+) : (
+  <button
+    type="button"
+    onClick={() => onFollowUp(item)}
+    disabled={isSending || !!sendingId}
+    className="inline-flex items-center justify-center gap-2 min-w-[118px] px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    <Send className="w-3.5 h-3.5" />
+
+    {isSending ? 'Sending...' : item.action_label}
+  </button>
+)}
         </div>
       </div>
     </div>
@@ -356,6 +375,7 @@ export default function RecoveryQueue({ onDataChanged }) {
                     isSending={sendingId === `${item.type}-${item.id}`}
                     sendingId={sendingId}
                     onFollowUp={handleFollowUp}
+                     isAutomated
                   />
                 ))}
               </div>
