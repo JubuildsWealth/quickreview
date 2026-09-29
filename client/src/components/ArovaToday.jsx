@@ -56,7 +56,43 @@ function HandledLine({ count, label }) {
     </li>
   )
 }
+function getRecoveryHealth(attention) {
+  const attentionCount =
+    (attention.hot_leads_count || 0) +
+    (attention.cold_estimates_count || 0) +
+    (attention.overdue_invoices_count || 0)
 
+  const moneyNeedingAttention = attention.total_cents || 0
+
+  if (attentionCount === 0) {
+    return {
+      status: 'Healthy',
+      message: 'Your recovery pipeline is under control.',
+      dotClass: 'bg-green-500',
+      badgeClass: 'bg-green-50 text-green-700',
+    }
+  }
+
+  if (
+    attention.hot_leads_count > 0 ||
+    attentionCount >= 3 ||
+    moneyNeedingAttention >= 500000
+  ) {
+    return {
+      status: 'Needs attention',
+      message: 'Some recovery opportunities need your decision.',
+      dotClass: 'bg-amber-500',
+      badgeClass: 'bg-amber-50 text-amber-700',
+    }
+  }
+
+  return {
+    status: 'Watch',
+    message: 'A few opportunities are starting to need attention.',
+    dotClass: 'bg-gray-400',
+    badgeClass: 'bg-gray-100 text-gray-700',
+  }
+}
 function TodaySkeleton() {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-8 mb-6 animate-pulse">
@@ -99,13 +135,26 @@ export default function ArovaToday() {
     attention.cold_estimates_count === 0 &&
     attention.overdue_invoices_count === 0
 
+  const recoveryHealth = getRecoveryHealth(attention)
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8 mb-6">
-      {/* -------- Header -------- */}
-      <div className="mb-6">
-        <p className="text-sm font-medium text-gray-500">
-          {getGreeting()}, {business_name}
-        </p>
+     {/* -------- Header -------- */}
+<div className="mb-6">
+  <div className="flex flex-wrap items-center justify-between gap-3">
+    <p className="text-sm font-medium text-gray-500">
+      {getGreeting()}, {business_name}
+    </p>
+
+    <div
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${recoveryHealth.badgeClass}`}
+    >
+      <span
+        className={`w-1.5 h-1.5 rounded-full ${recoveryHealth.dotClass}`}
+      />
+      Recovery health · {recoveryHealth.status}
+    </div>
+  </div>
 
         {nothingNeedsAttention ? (
           <p className="text-3xl sm:text-4xl font-semibold tracking-tight text-gray-900 leading-tight mt-2">
