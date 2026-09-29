@@ -9,7 +9,6 @@ import WeeklyRecoveryReport from '../components/WeeklyRecoveryReport'
 import RevenueRecoveryHero from '../components/RevenueRecoveryHero'
 import RecoveryQueue from '../components/RecoveryQueue'
 import OpportunityCenter from '../components/OpportunityCenter'
-import NeedsAttention from '../components/NeedsAttention'
 function StatCard({ label, value, icon: Icon }) {
   return (
     <div className="bg-white rounded-2xl p-5 border border-gray-200">
@@ -169,7 +168,6 @@ export default function Dashboard({ business }) {
           {/* Day 2: Revenue Recovery Engine visual anchor */}
           <RevenueRecoveryHero summary={summary} loading={summaryLoading} />
           <RecoveryQueue onDataChanged={loadSummary} />
-         <NeedsAttention onDataChanged={loadSummary} />
           <OpportunityCenter
             summary={summary}
             loading={summaryLoading}
