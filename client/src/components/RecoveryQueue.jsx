@@ -403,6 +403,7 @@ export default function RecoveryQueue({ onDataChanged }) {
                     isSending={sendingId === `${item.type}-${item.id}`}
                     sendingId={sendingId}
                     onFollowUp={handleFollowUp}
+                     isAutomated
                   />
                 ))}
               </div>
