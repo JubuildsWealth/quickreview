@@ -52,29 +52,32 @@ function getPriority(daysSinceActivity) {
 }
 
 function buildReason(type, daysSinceActivity, reminderCount) {
-  const noun = type === 'estimate' ? 'follow-up' : 'reminder';
-
+  // No nudge sent yet
   if (reminderCount === 0) {
     if (daysSinceActivity === 0) {
-      return `No ${noun} sent yet`;
+      return 'Just opened · ready to nudge';
     }
 
     if (daysSinceActivity === 1) {
-      return `No ${noun} sent · open 1 day`;
+      return '1 day open · no nudge sent';
     }
 
-    return `No ${noun} sent · open ${daysSinceActivity} days`;
+    return `${daysSinceActivity} days cold · no nudge sent`;
   }
 
+  // At least one nudge sent
+  const totalLabel =
+    reminderCount === 1 ? '1 total' : `${reminderCount} total`;
+
   if (daysSinceActivity === 0) {
-    return `${reminderCount} ${noun}${reminderCount === 1 ? '' : 's'} sent · contacted today`;
+    return 'Just nudged · waiting on reply';
   }
 
   if (daysSinceActivity === 1) {
-    return `${reminderCount} ${noun}${reminderCount === 1 ? '' : 's'} sent · last contact 1 day ago`;
+    return `Nudged yesterday · ${totalLabel}`;
   }
 
-  return `${reminderCount} ${noun}${reminderCount === 1 ? '' : 's'} sent · last contact ${daysSinceActivity} days ago`;
+  return `${daysSinceActivity} days since last nudge · ${totalLabel}`;
 }
 
 // ---------------------------------------------------------------
