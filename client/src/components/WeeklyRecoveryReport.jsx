@@ -100,21 +100,21 @@ export default function WeeklyRecoveryReport() {
     }
   }, [])
 
- if (loading) {
+if (loading) {
   return (
-    <div style={{ padding: 20, background: 'yellow', color: 'black' }}>
-      WEEKLY REPORT: LOADING
-    </div>
+    <div
+      style={{
+        height: 260,
+        marginTop: 24,
+        background: '#fff',
+        border: '1px solid #e8e8ed',
+        borderRadius: 16,
+      }}
+    />
   )
 }
 
-if (!report) {
-  return (
-    <div style={{ padding: 20, background: 'red', color: 'white' }}>
-      WEEKLY REPORT: NO REPORT DATA
-    </div>
-  )
-}
+if (!report) return null
 
   const { handled = {} } = report
 
