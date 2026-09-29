@@ -5,6 +5,8 @@ import {
   FileText,
   Receipt,
   Send,
+  Sparkles,
+  AlertCircle,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -36,11 +38,31 @@ function PriorityBadge({ priority }) {
     )
   }
 
-  // Low priority: no badge. Silence is the signal.
   return null
 }
 
- 
+/**
+ * Deterministic rules for when an item needs human attention
+ * vs when Arova can keep handling it automatically.
+ *
+ * Returns true if the item needs the owner's decision.
+ */
+function needsHuman(item) {
+  const days = item.days_since_activity || 0
+  const nudges = item.reminder_count || 0
+  const amount = item.amount_cents || 0
+
+  // Rule 1: Aging and Arova hasn't touched it yet.
+  if (nudges === 0 && days >= 3) return true
+
+  // Rule 2: Arova has tried multiple times, nothing's working.
+  if (nudges >= 2 && days >= 7) return true
+
+  // Rule 3: High-value, high-priority items always surface.
+  if (item.priority === 'high' && amount >= 100000) return true
+
+  return false
+}
 
 function QueueSkeleton() {
   return (
@@ -68,6 +90,76 @@ function QueueSkeleton() {
             <div className="h-9 w-24 bg-gray-100 rounded-xl animate-pulse" />
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function QueueItem({ item, isSending, sendingId, onFollowUp }) {
+  const Icon = item.type === 'estimate' ? FileText : Receipt
+
+  return (
+    <div className="px-6 py-5">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+        <div className="flex items-start gap-3.5 flex-1 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 text-gray-500" />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="font-medium text-gray-900 truncate">
+                {item.customer_name}
+              </p>
+
+              <span className="text-gray-300">·</span>
+
+              <span className="text-sm text-gray-500 capitalize">
+                {item.type}
+              </span>
+            </div>
+
+            {item.description && (
+              <p className="text-sm text-gray-600 mt-1 truncate">
+                {item.description}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <PriorityBadge priority={item.priority} />
+
+              <span className="text-xs text-gray-500">
+                {item.reason}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between lg:justify-end gap-4 lg:pl-4">
+          <div className="lg:text-right shrink-0">
+            <p className="text-lg font-semibold tracking-tight text-gray-900">
+              {formatMoney(item.amount_cents)}
+            </p>
+
+            <p className="text-xs text-gray-400 mt-0.5">
+              {item.reminder_count || 0}{' '}
+              {(item.reminder_count || 0) === 1
+                ? 'follow-up'
+                : 'follow-ups'}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onFollowUp(item)}
+            disabled={isSending || !!sendingId}
+            className="inline-flex items-center justify-center gap-2 min-w-[118px] px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Send className="w-3.5 h-3.5" />
+
+            {isSending ? 'Sending...' : item.action_label}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -140,6 +232,10 @@ export default function RecoveryQueue({ onDataChanged }) {
 
   const visibleQueue = queue.slice(0, 5)
 
+  // Split the queue into two buckets using deterministic rules.
+  const needsYou = visibleQueue.filter(needsHuman)
+  const arovaHandling = visibleQueue.filter((item) => !needsHuman(item))
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 mb-6 overflow-hidden">
       <div className="p-6 border-b border-gray-100">
@@ -205,85 +301,59 @@ export default function RecoveryQueue({ onDataChanged }) {
         </div>
       ) : (
         <>
-          <div className="divide-y divide-gray-100">
-            {visibleQueue.map((item) => {
-              const sendingKey = `${item.type}-${item.id}`
-              const isSending = sendingId === sendingKey
-              const Icon =
-                item.type === 'estimate' ? FileText : Receipt
+          {/* Needs You section */}
+          {needsYou.length > 0 && (
+            <div>
+              <div className="px-6 py-3 bg-amber-50/60 border-b border-amber-100 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                  Needs you
+                </p>
+                <span className="text-xs text-amber-700">
+                  · {needsYou.length}{' '}
+                  {needsYou.length === 1 ? 'item' : 'items'} require your decision
+                </span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {needsYou.map((item) => (
+                  <QueueItem
+                    key={`${item.type}-${item.id}`}
+                    item={item}
+                    isSending={sendingId === `${item.type}-${item.id}`}
+                    sendingId={sendingId}
+                    onFollowUp={handleFollowUp}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-              return (
-                <div
-                  key={sendingKey}
-                  className="px-6 py-5"
-                >
-                  <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                    <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
-                        <Icon className="w-4.5 h-4.5 text-gray-500" />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <p className="font-medium text-gray-900 truncate">
-                            {item.customer_name}
-                          </p>
-
-                          <span className="text-gray-300">·</span>
-
-                          <span className="text-sm text-gray-500 capitalize">
-                            {item.type}
-                          </span>
-                        </div>
-
-                        {item.description && (
-                          <p className="text-sm text-gray-600 mt-1 truncate">
-                            {item.description}
-                          </p>
-                        )}
-
-                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                          <PriorityBadge priority={item.priority} />
-
-                          <span className="text-xs text-gray-500">
-                            {item.reason}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between lg:justify-end gap-4 lg:pl-4">
-                      <div className="lg:text-right shrink-0">
-                        <p className="text-lg font-semibold tracking-tight text-gray-900">
-                          {formatMoney(item.amount_cents)}
-                        </p>
-
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {item.reminder_count || 0}{' '}
-                          {(item.reminder_count || 0) === 1
-                            ? 'follow-up'
-                            : 'follow-ups'}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleFollowUp(item)}
-                        disabled={isSending || !!sendingId}
-                        className="inline-flex items-center justify-center gap-2 min-w-[118px] px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-
-                        {isSending
-                          ? 'Sending...'
-                          : item.action_label}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          {/* Arova Handling section */}
+          {arovaHandling.length > 0 && (
+            <div>
+              <div className="px-6 py-3 bg-gray-50/60 border-b border-gray-100 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-gray-500" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  Arova is handling
+                </p>
+                <span className="text-xs text-gray-500">
+                  · Auto-nudging {arovaHandling.length}{' '}
+                  {arovaHandling.length === 1 ? 'item' : 'items'}
+                </span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {arovaHandling.map((item) => (
+                  <QueueItem
+                    key={`${item.type}-${item.id}`}
+                    item={item}
+                    isSending={sendingId === `${item.type}-${item.id}`}
+                    sendingId={sendingId}
+                    onFollowUp={handleFollowUp}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {queue.length > 5 && (
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50">
