@@ -59,95 +59,145 @@ export default function RevenueRecoveryHero({ summary, loading }) {
   const hasOpportunities = openTotal > 0
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-8 mb-6">
-      <p className="text-sm font-medium text-gray-500 mb-2">Open opportunities</p>
-      <div className="flex items-baseline gap-4 mb-6 flex-wrap">
-        <span className="text-5xl font-semibold tracking-tight text-gray-900 leading-none">
-          {formatMoney(openTotal)}
-        </span>
-              <span className="text-sm text-gray-500">
-          {hasOpportunities
-            ? 'in unresolved estimates and invoices'
-            : 'Add customers and create invoices to start tracking'}
-        </span>
-      </div>
+  <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8 mb-6">
+    {/* -------- Executive recovery snapshot -------- */}
+    <div className="mb-6">
+      <p className="text-sm font-medium text-gray-500 mb-5">
+        Revenue recovery
+      </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl">
-          <div className="w-9 h-9 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
-            <TrendingUp className="w-4 h-4 text-green-600" />
-          </div>
-          <div className="min-w-0">
-                       <p className="text-xs font-medium text-gray-500">Recovered this month</p>
-            <p className="text-lg font-semibold text-gray-900">{formatMoney(recovered)}</p>
-            {recovered === 0 && (
-              <p className="text-xs text-gray-400 mt-0.5">Your first Arova recovery shows here</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-0">
+        {/* Recovered */}
+        <div className="sm:pr-8">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">
+            Recovered this month
+          </p>
+
+          <div className="flex items-center gap-2">
+            <span className="text-4xl sm:text-5xl font-semibold tracking-tight text-gray-900 leading-none">
+              {formatMoney(recovered)}
+            </span>
+
+            {recovered > 0 && (
+              <TrendingUp className="w-5 h-5 text-green-600 shrink-0" />
             )}
           </div>
-        </div>
-        
 
-        <div className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl">
+          <p className="text-sm text-gray-500 mt-3">
+            {recovered > 0
+              ? 'Revenue recovered after Arova follow-up'
+              : 'Your first Arova recovery will show here'}
+          </p>
+        </div>
+
+        {/* Revenue at risk */}
+        <div className="sm:pl-8 sm:border-l sm:border-gray-200">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">
+            Revenue at risk
+          </p>
+
+          <span className="text-4xl sm:text-5xl font-semibold tracking-tight text-gray-900 leading-none">
+            {formatMoney(openTotal)}
+          </span>
+
+          <p className="text-sm text-gray-500 mt-3">
+            {hasOpportunities
+              ? 'Unresolved estimates and invoices'
+              : 'No unresolved revenue opportunities'}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {/* -------- Hot leads -------- */}
+    <div className="pt-5 border-t border-gray-100">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
           <div
             className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
               hotLeads > 0 ? 'bg-orange-50' : 'bg-gray-50'
             }`}
           >
             <Flame
-              className={`w-4 h-4 ${hotLeads > 0 ? 'text-orange-600' : 'text-gray-400'}`}
+              className={`w-4 h-4 ${
+                hotLeads > 0 ? 'text-orange-600' : 'text-gray-400'
+              }`}
             />
           </div>
+
           <div className="min-w-0">
-                       <p className="text-xs font-medium text-gray-500">Hot leads waiting</p>
-            <p className="text-lg font-semibold text-gray-900">{hotLeads}</p>
-            {hotLeads === 0 && (
-              <p className="text-xs text-gray-400 mt-0.5">Customers who reply with buying intent</p>
-            )}
+            <p className="text-sm font-medium text-gray-900">
+              Hot leads waiting
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {hotLeads > 0
+                ? 'Customers showing buying intent'
+                : 'No buying-intent replies need attention'}
+            </p>
           </div>
         </div>
+
+        <span className="text-2xl font-semibold tracking-tight text-gray-900 shrink-0">
+          {hotLeads}
+        </span>
       </div>
-
-      {/* -------- Recent recoveries -------- */}
-      {!eventsLoading && events.length > 0 && (
-        <div className="mt-6 pt-6 border-t border-gray-100">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-medium text-gray-700">Recent recoveries</p>
-            <p className="text-xs text-gray-400">What Arova helped close</p>
-          </div>
-          <ul className="divide-y divide-gray-100">
-            {events.map((e) => {
-              const label =
-                e.source_type === 'estimate' ? 'Estimate won' : 'Invoice paid'
-              const followUpsLine =
-                e.reminder_count_at_recovery > 0
-                  ? `after ${e.reminder_count_at_recovery} Arova follow-up${
-                      e.reminder_count_at_recovery === 1 ? '' : 's'
-                    }`
-                  : 'after Arova follow-up'
-
-              return (
-                <li key={e.id} className="py-3 flex items-center gap-3">
-                  <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {formatMoney(e.amount_cents)} · {label}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {e.customer_name}
-                      {e.description ? ` · ${e.description}` : ''} · {followUpsLine}
-                    </p>
-                  </div>
-                  <span className="text-xs text-gray-400 shrink-0">
-                    {formatRelativeTime(e.recovered_at)}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
     </div>
-  )
-}
+
+    {/* -------- Recent recoveries -------- */}
+    {!eventsLoading && events.length > 0 && (
+      <div className="mt-6 pt-6 border-t border-gray-100">
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <p className="text-sm font-medium text-gray-700">
+            Recent recoveries
+          </p>
+          <p className="text-xs text-gray-400">
+            What Arova helped close
+          </p>
+        </div>
+
+        <ul className="divide-y divide-gray-100">
+          {events.map((e) => {
+            const label =
+              e.source_type === 'estimate'
+                ? 'Estimate won'
+                : 'Invoice paid'
+
+            const followUpsLine =
+              e.reminder_count_at_recovery > 0
+                ? `after ${e.reminder_count_at_recovery} Arova follow-up${
+                    e.reminder_count_at_recovery === 1 ? '' : 's'
+                  }`
+                : 'after Arova follow-up'
+
+            return (
+              <li
+                key={e.id}
+                className="py-3 flex items-center gap-3"
+              >
+                <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-green-600" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {formatMoney(e.amount_cents)} · {label}
+                  </p>
+
+                  <p className="text-xs text-gray-500 truncate">
+                    {e.customer_name}
+                    {e.description ? ` · ${e.description}` : ''} ·{' '}
+                    {followUpsLine}
+                  </p>
+                </div>
+
+                <span className="text-xs text-gray-400 shrink-0">
+                  {formatRelativeTime(e.recovered_at)}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    )}
+  </div>
+)
