@@ -3,6 +3,7 @@ const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
 const { getAttributionLevel, capRecoveryAmount } = require('../lib/attribution');
+
 const router = express.Router();
 
 const twilioClient = twilio(
@@ -19,8 +20,11 @@ router.post('/', requireAuth, async (req, res) => {
   if (!customer_id) {
     return res.status(400).json({ error: 'customer_id is required' });
   }
+
   if (!amount_cents || amount_cents <= 0) {
-    return res.status(400).json({ error: 'amount_cents must be a positive number' });
+    return res.status(400).json({
+      error: 'amount_cents must be a positive number',
+    });
   }
 
   const { data: business, error: bizErr } = await req.supabase
@@ -98,9 +102,13 @@ router.get('/', requireAuth, async (req, res) => {
 //   { status: 'declined' }
 //   { won: true, revenue_cents: N }
 //
-// When won === true AND Arova sent at least one follow-up first,
-// we ALSO write to recovery_events so the recovery hero can show
-// the specific event ("$X from Name — after N Arova follow-ups").
+// Recovery attribution:
+//   confirmed  = recent Arova follow-up + linked customer reply
+//   influenced = recent Arova follow-up without linked reply
+//   none       = does not qualify for Arova recovery attribution
+//
+// A recovery_events row is only created when attributionLevel
+// is not "none".
 // ---------------------------------------------------------------
 router.patch('/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -131,82 +139,92 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
   if (won === true) {
     if (!revenue_cents || revenue_cents <= 0) {
-      return res.status(400).json({ error: 'revenue_cents required when marking won' });
+      return res.status(400).json({
+        error: 'revenue_cents required when marking won',
+      });
     }
+
     update.won_at = now;
-      
     update.status = 'accepted';
     update.accepted_at = now;
 
-       const { data: current } = await req.supabase
+    const { data: current, error: currentErr } = await req.supabase
       .from('estimates')
-      .select('id, customer_id, description, reminder_count, last_reminded_at, amount_cents')
+      .select(
+        'id, customer_id, description, reminder_count, last_reminded_at, amount_cents'
+      )
       .eq('id', id)
       .eq('business_id', business.id)
       .single();
-       if (!current) {
+
+    if (currentErr || !current) {
       return res.status(404).json({ error: 'Estimate not found' });
     }
 
     // Validate claimed revenue against the original estimate amount.
     // Rejects typos and inflated numbers before they enter the dashboard.
-    const capResult = capRecoveryAmount(revenue_cents, current.amount_cents);
+    const capResult = capRecoveryAmount(
+      revenue_cents,
+      current.amount_cents
+    );
+
     if (!capResult.ok) {
       return res.status(400).json({ error: capResult.error });
     }
 
-   const remindersSent = current.reminder_count || 0;
+    const remindersSent = current.reminder_count || 0;
 
-// Look for customer engagement tied to THIS exact estimate
-// after the most recent Arova follow-up.
-let hasLinkedReply = false;
+    // Look for customer engagement tied to THIS exact estimate
+    // after the most recent Arova follow-up.
+    let hasLinkedReply = false;
 
-if (remindersSent > 0 && current.last_reminded_at) {
-  const { data: linkedReply, error: replyErr } = await supabaseAdmin
-    .from('sms_replies')
-    .select('id, received_at')
-    .eq('business_id', business.id)
-    .eq('customer_id', current.customer_id)
-    .eq('related_type', 'estimate')
-    .eq('related_id', current.id)
-    .gte('received_at', current.last_reminded_at)
-    .lte('received_at', now)
-    .order('received_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    if (remindersSent > 0 && current.last_reminded_at) {
+      const { data: linkedReply, error: replyErr } = await supabaseAdmin
+        .from('sms_replies')
+        .select('id, received_at')
+        .eq('business_id', business.id)
+        .eq('customer_id', current.customer_id)
+        .eq('related_type', 'estimate')
+        .eq('related_id', current.id)
+        .gte('received_at', current.last_reminded_at)
+        .lte('received_at', now)
+        .order('received_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-  if (replyErr) {
-    console.error(
-      '[Estimate won] linked reply lookup failed:',
-      replyErr.message
-    );
-  } else {
-    hasLinkedReply = Boolean(linkedReply);
+      if (replyErr) {
+        console.error(
+          '[Estimate won] linked reply lookup failed:',
+          replyErr.message
+        );
+      } else {
+        hasLinkedReply = Boolean(linkedReply);
+      }
+    }
+
+    const attributionLevel = getAttributionLevel({
+      reminderCount: remindersSent,
+      lastRemindedAt: current.last_reminded_at,
+      hasLinkedReply,
+    });
+
+    const arovaAttributed = attributionLevel !== 'none';
+
+    // Prepare event payload; insert only after estimate update succeeds.
+    if (arovaAttributed) {
+      recoveryEventPayload = {
+        business_id: business.id,
+        customer_id: current.customer_id,
+        source_type: 'estimate',
+        source_id: current.id,
+        amount_cents: capResult.amountCents,
+        reminder_count_at_recovery: remindersSent,
+        description: current.description,
+        recovered_at: now,
+        attribution_level: attributionLevel,
+      };
+    }
   }
-}
-
-const attributionLevel = getAttributionLevel({
-  reminderCount: remindersSent,
-  lastRemindedAt: current.last_reminded_at,
-  hasLinkedReply,
-});
-
-const arovaAttributed = attributionLevel !== 'none';
-
-// Prepare event payload; insert only after estimate update succeeds.
-if (arovaAttributed) {
-  recoveryEventPayload = {
-    business_id: business.id,
-    customer_id: current.customer_id,
-    source_type: 'estimate',
-    source_id: current.id,
-    amount_cents: capResult.amountCents,
-    reminder_count_at_recovery: remindersSent,
-    description: current.description,
-    recovered_at: now,
-    attribution_level: attributionLevel,
-  };
-}
 
   if (Object.keys(update).length === 0) {
     return res.status(400).json({ error: 'Nothing to update' });
@@ -228,8 +246,12 @@ if (arovaAttributed) {
     const { error: eventErr } = await supabaseAdmin
       .from('recovery_events')
       .insert(recoveryEventPayload);
+
     if (eventErr && eventErr.code !== '23505') {
-      console.error('[Estimate won] recovery_events insert failed:', eventErr.message);
+      console.error(
+        '[Estimate won] recovery_events insert failed:',
+        eventErr.message
+      );
     }
   }
 
@@ -254,7 +276,9 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
 
   const { data: estimate, error: estErr } = await req.supabase
     .from('estimates')
-    .select('*, customers ( id, name, phone, sms_consent, opted_out, language )')
+    .select(
+      '*, customers ( id, name, phone, sms_consent, opted_out, language )'
+    )
     .eq('id', id)
     .eq('business_id', business.id)
     .single();
@@ -264,7 +288,9 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
   }
 
   if (estimate.status !== 'sent') {
-    return res.status(400).json({ error: 'Estimate is already resolved.' });
+    return res.status(400).json({
+      error: 'Estimate is already resolved.',
+    });
   }
 
   const customer = estimate.customers;
@@ -274,17 +300,24 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
       error: 'This customer has not opted in to receive text messages.',
     });
   }
+
   if (customer.opted_out) {
     return res.status(403).json({
-      error: 'This customer has opted out of text messages (replied STOP).',
+      error:
+        'This customer has opted out of text messages (replied STOP).',
     });
   }
+
   if (!customer.phone) {
-    return res.status(400).json({ error: 'Customer has no phone number on file.' });
+    return res.status(400).json({
+      error: 'Customer has no phone number on file.',
+    });
   }
 
   const amount = (estimate.amount_cents / 100).toFixed(2);
-  const forPart = estimate.description ? ` for ${estimate.description}` : '';
+  const forPart = estimate.description
+    ? ` for ${estimate.description}`
+    : '';
 
   const messages = {
     en:
@@ -295,10 +328,14 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
       `¿Alguna pregunta? Responda STOP para cancelar.`,
   };
 
-  const language = (customer.language || 'en').toLowerCase().slice(0, 2);
+  const language = (customer.language || 'en')
+    .toLowerCase()
+    .slice(0, 2);
+
   const message = messages[language] || messages.en;
 
-   let twilioMessage;
+  let twilioMessage;
+
   try {
     twilioMessage = await twilioClient.messages.create({
       body: message,
@@ -306,11 +343,17 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
       to: customer.phone,
     });
   } catch (twilioError) {
-    return res.status(500).json({ error: `SMS failed: ${twilioError.message}` });
+    return res.status(500).json({
+      error: `SMS failed: ${twilioError.message}`,
+    });
   }
 
-  // Log the outbound SMS. Non-fatal — the estimate update below
-  // still runs even if this fails.
+  // Log the outbound SMS.
+  // source_id ties this exact message to this exact estimate so an
+  // inbound customer reply can later be linked back to the estimate.
+  //
+  // Logging failure remains non-fatal because Twilio has already
+  // successfully sent the message.
   const { error: logError } = await supabaseAdmin
     .from('sms_outbound')
     .insert({
@@ -320,8 +363,8 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
       body: message,
       twilio_sid: twilioMessage.sid,
       status: 'sent',
-    source_id: estimate.id, 
-source_id: estimate.id,
+      source_type: 'estimate_followup_manual',
+      source_id: estimate.id,
     });
 
   if (logError) {
@@ -342,6 +385,7 @@ source_id: estimate.id,
 
   res.json({ ok: true });
 });
+
 // ---------------------------------------------------------------
 // POST /api/estimates/:id/revert-won  -  undo a "mark won"
 //
@@ -373,8 +417,7 @@ router.post('/:id/revert-won', requireAuth, async (req, res) => {
   }
 
   // Confirm the estimate exists, belongs to this business, and
-  // is actually in a won state. Refuse to "revert" something that
-  // was never won.
+  // is actually in a won state.
   const { data: current, error: readErr } = await req.supabase
     .from('estimates')
     .select('id, won_at')
@@ -387,7 +430,9 @@ router.post('/:id/revert-won', requireAuth, async (req, res) => {
   }
 
   if (!current.won_at) {
-    return res.status(400).json({ error: 'This estimate is not marked as won.' });
+    return res.status(400).json({
+      error: 'This estimate is not marked as won.',
+    });
   }
 
   // Reset the estimate to open-work state.
@@ -404,12 +449,12 @@ router.post('/:id/revert-won', requireAuth, async (req, res) => {
     .single();
 
   if (updateErr || !updated) {
-    return res.status(500).json({ error: updateErr?.message || 'Update failed' });
+    return res.status(500).json({
+      error: updateErr?.message || 'Update failed',
+    });
   }
 
   // Remove the recovery event so the dashboard number drops.
-  // Uses supabaseAdmin because recovery_events writes bypass RLS
-  // by the same pattern used elsewhere in this file.
   const { error: deleteErr } = await supabaseAdmin
     .from('recovery_events')
     .delete()
@@ -418,8 +463,6 @@ router.post('/:id/revert-won', requireAuth, async (req, res) => {
     .eq('source_id', id);
 
   if (deleteErr) {
-    // Non-fatal: the estimate is already reverted. Log for
-    // investigation but don't fail the request.
     console.error(
       `[Estimate revert-won] recovery_events delete failed for ${id}:`,
       deleteErr.message
@@ -428,4 +471,5 @@ router.post('/:id/revert-won', requireAuth, async (req, res) => {
 
   res.json({ estimate: updated });
 });
+
 module.exports = router;
