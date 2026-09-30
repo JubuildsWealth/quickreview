@@ -90,7 +90,7 @@ async function runInvoiceRecovery() {
       )
     `)
     .in('business_id', enabledBusinessIds)
-    .neq('status', 'paid');
+    .eq('status', 'unpaid');
 
   if (invoicesError) {
     console.error(
@@ -205,13 +205,12 @@ async function runInvoiceRecovery() {
       continue;
     }
 
-    if (freshInvoice.status === 'paid' || freshInvoice.paid_at) {
-      console.log(
-        `[Invoice Recovery] Skipping ${invoice.id}: invoice is now paid.`
-      );
-      continue;
-    }
-
+  if (freshInvoice.status !== 'unpaid' || freshInvoice.paid_at) {
+  console.log(
+    `[Invoice Recovery] Skipping ${invoice.id}: invoice is no longer unpaid.`
+  );
+  continue;
+} 
     const freshReminderCount = freshInvoice.reminder_count || 0;
 
     if (freshReminderCount >= MAX_REMINDERS) {
@@ -304,7 +303,7 @@ async function runInvoiceRecovery() {
           reminder_count: freshReminderCount + 1,
         })
         .eq('id', invoice.id)
-        .neq('status', 'paid');
+        .eq('status', 'unpaid');
 
       if (updateError) {
         console.error(
