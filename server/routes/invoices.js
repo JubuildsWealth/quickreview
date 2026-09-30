@@ -291,7 +291,8 @@ const message = messages[language] || messages.en;
       body: message,
       twilio_sid: twilioMessage.sid,
       status: 'sent',
-      source_type: 'invoice_reminder_manual',
+     source_type: 'invoice_reminder_manual',
+source_id: invoice.id,
     });
 
   if (logError) {
