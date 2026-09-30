@@ -1,7 +1,7 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
-
+const { normalizePhone } = require('../lib/phone');
 const router = express.Router();
 
 // ---------------------------------------------------------------
@@ -46,6 +46,19 @@ router.post('/', requireAuth, async (req, res) => {
     });
   }
 
+  // Normalize the phone to E.164 (+1XXXXXXXXXX) before we do anything else.
+  // Every phone in the customers table must be in this format so that
+  // downstream lookups (STOP handling, hot lead linking, missed call
+  // recognition) can reliably match on it.
+  const normalizedPhone = normalizePhone(phone);
+
+  if (!normalizedPhone) {
+    return res.status(400).json({
+      error:
+        'Phone number is not a valid US number. Please enter a 10-digit US number.',
+    });
+  }
+
   const { data: business } = await req.supabase
     .from('businesses')
     .select('id')
@@ -61,7 +74,7 @@ router.post('/', requireAuth, async (req, res) => {
     .insert({
       business_id: business.id,
       name,
-      phone,
+      phone: normalizedPhone,
       sms_consent: sms_consent === true,
       sms_consent_at:
         sms_consent === true ? new Date().toISOString() : null,
@@ -70,7 +83,6 @@ router.post('/', requireAuth, async (req, res) => {
     })
     .select()
     .single();
-
   if (error) {
     return res.status(500).json({ error: error.message });
   }
