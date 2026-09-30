@@ -311,7 +311,68 @@ router.post(
             `Customer lookup failed: ${customerError.message}`
           );
         }
+        // ---------------------------------------------------------------
+// LINK REPLY TO RECENT OUTBOUND CONTEXT
+// ---------------------------------------------------------------
+// If this customer is replying shortly after an Arova message,
+// attach the reply to the exact invoice / estimate / etc. that
+// caused the conversation.
+//
+// We only consider messages from the last 7 days so an unrelated
+// future text does not get attached to an old recovery sequence.
+let relatedType = null;
+let relatedId = null;
 
+if (customer?.id && customer?.business_id) {
+  const replyLinkCutoff = new Date(
+    Date.now() - 7 * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const { data: recentOutbound, error: outboundError } =
+    await supabaseAdmin
+      .from('sms_outbound')
+      .select('source_type, source_id, sent_at')
+      .eq('business_id', customer.business_id)
+      .eq('customer_id', customer.id)
+      .not('source_id', 'is', null)
+      .gte('sent_at', replyLinkCutoff)
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+  if (outboundError) {
+    console.error(
+      '[Inbound SMS] Failed to resolve outbound context:',
+      outboundError.message
+    );
+  } else if (recentOutbound?.source_id) {
+    const sourceTypeMap = {
+      invoice_reminder_auto: 'invoice',
+      invoice_reminder_manual: 'invoice',
+      estimate_followup_auto: 'estimate',
+      estimate_followup_manual: 'estimate',
+      customer_reactivation: 'reactivation',
+      missed_call_reply: 'missed_call',
+      review_request: 'review_request',
+      review_followup: 'review_request',
+    };
+
+    const mappedType = sourceTypeMap[recentOutbound.source_type];
+
+    if (mappedType) {
+      relatedType = mappedType;
+      relatedId = recentOutbound.source_id;
+
+      console.log('[Inbound SMS] Reply linked to outbound context:', {
+        customer_id: customer.id,
+        source_type: recentOutbound.source_type,
+        related_type: relatedType,
+        related_id: relatedId,
+        outbound_sent_at: recentOutbound.sent_at,
+      });
+    }
+  }
+}
         // Log every normal inbound reply.
         // These column names have been verified against the production
         // sms_replies table.
@@ -326,6 +387,8 @@ router.post(
             twilio_sid: twilioSid,
             is_hot_lead: isHotLead,
             hot_lead_keyword: matchedKeyword,
+            related_type: relatedType,
+            related_id: relatedId,
           });
 
         if (replyError) {
