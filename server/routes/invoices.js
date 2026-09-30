@@ -3,6 +3,7 @@ const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
 const { qualifiesForRecovery } = require('../lib/attribution');
+const { normalizePhone } = require('../lib/phone');
 const router = express.Router();
 
 const twilioClient = twilio(
@@ -219,22 +220,36 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Customer has no phone number on file.' });
   }
 
+  // Normalize the customer's phone to E.164 before sending.
+  const toPhone = normalizePhone(customer.phone);
+
+  if (!toPhone) {
+    return res.status(400).json({
+      error: 'Customer phone number is not in a valid format.',
+    });
+  }
+
   const amount = (invoice.amount_cents / 100).toFixed(2);
   const forPart = invoice.description ? ` for ${invoice.description}` : '';
   const payPart = invoice.payment_note ? ` ${invoice.payment_note}.` : '';
 
+  // Message copy note: matches the softer tone used in the cron job.
+  // "If you've already paid, please disregard" covers the real case
+  // where a customer paid out-of-band and the office hasn't marked it
+  // paid in Arova yet.
   const message =
-    `Hi ${customer.name}, a friendly reminder from ${business.name}: ` +
-    `you have a balance of $${amount}${forPart}.` +
+    `Hi ${customer.name}, quick note from ${business.name} — ` +
+    `showing a $${amount} balance${forPart}.` +
     payPart +
-    ` Reply STOP to opt out.`;
+    ` If you've already paid, please disregard. Otherwise, thanks for taking care of it. ` +
+    `Reply STOP to opt out.`;
 
    let twilioMessage;
   try {
     twilioMessage = await twilioClient.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE_NUMBER,
-      to: customer.phone,
+      to: toPhone,
     });
   } catch (twilioError) {
     return res.status(500).json({ error: `SMS failed: ${twilioError.message}` });
@@ -247,7 +262,7 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
     .insert({
       business_id: business.id,
       customer_id: invoice.customer_id,
-      to_phone: customer.phone,
+      to_phone: toPhone,
       body: message,
       twilio_sid: twilioMessage.sid,
       status: 'sent',
