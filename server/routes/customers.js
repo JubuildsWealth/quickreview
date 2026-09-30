@@ -27,9 +27,21 @@ router.get('/', requireAuth, async (req, res) => {
     .eq('business_id', business.id)
     .order('created_at', { ascending: false });
 
-  if (error) {
-    return res.status(500).json({ error: error.message });
+ if (error) {
+  // PostgreSQL unique_violation:
+  // customers must be unique by (business_id, phone).
+  if (error.code === '23505') {
+    return res.status(409).json({
+      error: 'A customer with this phone number already exists.',
+    });
   }
+
+  console.error('[Customers] Failed to create customer:', error);
+
+  return res.status(500).json({
+    error: 'Failed to create customer',
+  });
+}
 
   res.json({ customers: data });
 });
