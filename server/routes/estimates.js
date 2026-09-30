@@ -2,8 +2,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
-const { qualifiesForRecovery, capRecoveryAmount } = require('../lib/attribution');
-
+const { getAttributionLevel, capRecoveryAmount } = require('../lib/attribution');
 const router = express.Router();
 
 const twilioClient = twilio(
@@ -156,26 +155,58 @@ router.patch('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: capResult.error });
     }
 
-    const remindersSent = current.reminder_count || 0;
-    const arovaAttributed = qualifiesForRecovery({
-      reminderCount: remindersSent,
-      lastRemindedAt: current.last_reminded_at,
-    });
+   const remindersSent = current.reminder_count || 0;
 
-    // Prepare event payload; we insert it after the estimate update succeeds.
-    if (arovaAttributed) {
-      recoveryEventPayload = {
-        business_id: business.id,
-        customer_id: current.customer_id,
-        source_type: 'estimate',
-        source_id: current.id,
-        amount_cents: capResult.amountCents,
-        reminder_count_at_recovery: remindersSent,
-        description: current.description,
-        recovered_at: now,
-      };
-    }
+// Look for customer engagement tied to THIS exact estimate
+// after the most recent Arova follow-up.
+let hasLinkedReply = false;
+
+if (remindersSent > 0 && current.last_reminded_at) {
+  const { data: linkedReply, error: replyErr } = await supabaseAdmin
+    .from('sms_replies')
+    .select('id, received_at')
+    .eq('business_id', business.id)
+    .eq('customer_id', current.customer_id)
+    .eq('related_type', 'estimate')
+    .eq('related_id', current.id)
+    .gte('received_at', current.last_reminded_at)
+    .lte('received_at', now)
+    .order('received_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (replyErr) {
+    console.error(
+      '[Estimate won] linked reply lookup failed:',
+      replyErr.message
+    );
+  } else {
+    hasLinkedReply = Boolean(linkedReply);
   }
+}
+
+const attributionLevel = getAttributionLevel({
+  reminderCount: remindersSent,
+  lastRemindedAt: current.last_reminded_at,
+  hasLinkedReply,
+});
+
+const arovaAttributed = attributionLevel !== 'none';
+
+// Prepare event payload; insert only after estimate update succeeds.
+if (arovaAttributed) {
+  recoveryEventPayload = {
+    business_id: business.id,
+    customer_id: current.customer_id,
+    source_type: 'estimate',
+    source_id: current.id,
+    amount_cents: capResult.amountCents,
+    reminder_count_at_recovery: remindersSent,
+    description: current.description,
+    recovered_at: now,
+    attribution_level: attributionLevel,
+  };
+}
 
   if (Object.keys(update).length === 0) {
     return res.status(400).json({ error: 'Nothing to update' });
@@ -289,7 +320,8 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
       body: message,
       twilio_sid: twilioMessage.sid,
       status: 'sent',
-      source_type: 'estimate_followup_manual',
+    source_id: estimate.id, 
+source_id: estimate.id,
     });
 
   if (logError) {
