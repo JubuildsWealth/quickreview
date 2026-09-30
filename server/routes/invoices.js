@@ -199,7 +199,7 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
 
   const { data: invoice, error: invErr } = await req.supabase
     .from('invoices')
-    .select('*, customers ( id, name, phone, sms_consent, opted_out )')
+   .select('*, customers ( id, name, phone, sms_consent, opted_out, language )')
     .eq('id', id)
     .eq('business_id', business.id)
     .single();
@@ -229,20 +229,45 @@ router.post('/:id/remind', requireAuth, async (req, res) => {
     });
   }
 
-  const amount = (invoice.amount_cents / 100).toFixed(2);
-  const forPart = invoice.description ? ` for ${invoice.description}` : '';
-  const payPart = invoice.payment_note ? ` ${invoice.payment_note}.` : '';
+ const amount = (invoice.amount_cents / 100).toFixed(2);
 
-  // Message copy note: matches the softer tone used in the cron job.
-  // "If you've already paid, please disregard" covers the real case
-  // where a customer paid out-of-band and the office hasn't marked it
-  // paid in Arova yet.
-  const message =
+const language = (customer.language || 'en')
+  .toLowerCase()
+  .slice(0, 2);
+
+const forPartEn = invoice.description
+  ? ` for ${invoice.description}`
+  : '';
+
+const payPartEn = invoice.payment_note
+  ? ` ${invoice.payment_note}.`
+  : '';
+
+const forPartEs = invoice.description
+  ? ` por ${invoice.description}`
+  : '';
+
+const payPartEs = invoice.payment_note
+  ? ` ${invoice.payment_note}.`
+  : '';
+
+const messages = {
+  en:
     `Hi ${customer.name}, quick note from ${business.name} — ` +
-    `showing a $${amount} balance${forPart}.` +
-    payPart +
+    `showing a $${amount} balance${forPartEn}.` +
+    payPartEn +
     ` If you've already paid, please disregard. Otherwise, thanks for taking care of it. ` +
-    `Reply STOP to opt out.`;
+    `Reply STOP to opt out.`,
+
+  es:
+    `Hola ${customer.name}, un aviso de ${business.name} — ` +
+    `mostramos un saldo pendiente de $${amount}${forPartEs}.` +
+    payPartEs +
+    ` Si ya realizó el pago, ignore este mensaje. De lo contrario, gracias por atenderlo. ` +
+    `Responda STOP para cancelar.`,
+};
+
+const message = messages[language] || messages.en;
 
    let twilioMessage;
   try {
