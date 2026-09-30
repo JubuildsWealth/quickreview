@@ -2,50 +2,99 @@
 //
 // Shared attribution rules for Arova recovery events.
 //
-// Every recovery_events insert (invoice paid, estimate won, and any
-// future channel) MUST run through the checks in this file. That way
-// the dashboard number stays defensible: one definition of "Arova
-// recovered this", enforced in one place.
+// Attribution levels:
 //
-// Current rules:
-//   1. At least one Arova reminder must have gone out.
-//   2. The last reminder must have been within ATTRIBUTION_WINDOW_DAYS
-//      of the recovery event. Old reminders don't get credit for
-//      payments that landed months later.
-//   3. Claimed recovery amount is capped relative to the source
-//      amount, to protect against typos and inflated numbers.
-//      Applies to estimates (where the owner enters revenue_cents);
-//      for invoices the amount is fixed, so the cap is a no-op there.
+//   confirmed
+//     Arova sent a qualifying reminder, the customer replied to that
+//     exact invoice/estimate, and the recovery happened inside the
+//     attribution window.
+//
+//   influenced
+//     Arova sent a qualifying reminder and the recovery happened
+//     inside the attribution window, but there is no linked customer
+//     reply proving direct engagement.
+//
+//   none
+//     No qualifying reminder or the recovery happened outside the
+//     attribution window.
+//
+// IMPORTANT:
+// "none" should NOT be written to recovery_events. It means Arova
+// does not have enough evidence to claim involvement.
 
 const ATTRIBUTION_WINDOW_DAYS = 30;
-const ATTRIBUTION_WINDOW_MS = ATTRIBUTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+const ATTRIBUTION_WINDOW_MS =
+  ATTRIBUTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 // Revenue cap for estimate-won events.
-// A claimed recovery must be <= max(REVENUE_CAP_MULTIPLIER * reference,
-// REVENUE_CAP_FLOOR_CENTS), and always <= HARD_MAX_RECOVERY_CENTS.
 const REVENUE_CAP_MULTIPLIER = 2;
-const REVENUE_CAP_FLOOR_CENTS = 500_000;   // $5,000
+const REVENUE_CAP_FLOOR_CENTS = 500_000;    // $5,000
 const HARD_MAX_RECOVERY_CENTS = 10_000_000; // $100,000
 
 /**
  * Was the last reminder sent recently enough to plausibly have
- * caused this recovery?
+ * contributed to this recovery?
  *
- * @param {string|null} lastRemindedAt - ISO timestamp or null
- * @param {Date} [now] - injectable for tests
+ * Future timestamps are rejected rather than treated as valid.
+ *
+ * @param {string|null} lastRemindedAt
+ * @param {Date} [now]
  * @returns {boolean}
  */
 function isWithinAttributionWindow(lastRemindedAt, now = new Date()) {
   if (!lastRemindedAt) return false;
 
-  const reminded = new Date(lastRemindedAt).getTime();
-  if (Number.isNaN(reminded)) return false;
+  const remindedMs = new Date(lastRemindedAt).getTime();
+  const nowMs = now.getTime();
 
-  return (now.getTime() - reminded) <= ATTRIBUTION_WINDOW_MS;
+  if (Number.isNaN(remindedMs) || Number.isNaN(nowMs)) {
+    return false;
+  }
+
+  const elapsedMs = nowMs - remindedMs;
+
+  return (
+    elapsedMs >= 0 &&
+    elapsedMs <= ATTRIBUTION_WINDOW_MS
+  );
 }
 
 /**
- * Decide whether an event qualifies as Arova-attributed recovery.
+ * Classify Arova's involvement in a recovery.
+ *
+ * @param {object} params
+ * @param {number} params.reminderCount
+ * @param {string|null} params.lastRemindedAt
+ * @param {boolean} [params.hasLinkedReply=false]
+ * @param {Date} [params.now]
+ * @returns {'confirmed'|'influenced'|'none'}
+ */
+function getAttributionLevel({
+  reminderCount,
+  lastRemindedAt,
+  hasLinkedReply = false,
+  now,
+}) {
+  if (!reminderCount || reminderCount <= 0) {
+    return 'none';
+  }
+
+  if (!isWithinAttributionWindow(lastRemindedAt, now)) {
+    return 'none';
+  }
+
+  if (hasLinkedReply === true) {
+    return 'confirmed';
+  }
+
+  return 'influenced';
+}
+
+/**
+ * Backwards-compatible boolean helper.
+ *
+ * Existing callers can continue using qualifiesForRecovery while
+ * routes are migrated to getAttributionLevel().
  *
  * @param {object} params
  * @param {number} params.reminderCount
@@ -53,16 +102,25 @@ function isWithinAttributionWindow(lastRemindedAt, now = new Date()) {
  * @param {Date} [params.now]
  * @returns {boolean}
  */
-function qualifiesForRecovery({ reminderCount, lastRemindedAt, now }) {
-  if (!reminderCount || reminderCount <= 0) return false;
-  return isWithinAttributionWindow(lastRemindedAt, now);
+function qualifiesForRecovery({
+  reminderCount,
+  lastRemindedAt,
+  now,
+}) {
+  return (
+    getAttributionLevel({
+      reminderCount,
+      lastRemindedAt,
+      hasLinkedReply: false,
+      now,
+    }) !== 'none'
+  );
 }
 
 /**
- * Validate a claimed recovery amount against a reference (typically
- * the original estimate amount). Rejects typos and abuse without
- * silently clamping — a rejected value must be corrected by the
- * caller, never quietly changed.
+ * Validate a claimed recovery amount against a reference amount.
+ *
+ * Rejects suspicious values rather than silently clamping them.
  *
  * @param {number} claimedCents
  * @param {number} referenceCents
@@ -78,19 +136,24 @@ function capRecoveryAmount(claimedCents, referenceCents) {
     };
   }
 
-  const ref = Number.isFinite(referenceCents) && referenceCents > 0
-    ? referenceCents
-    : 0;
+  const ref =
+    Number.isFinite(referenceCents) && referenceCents > 0
+      ? referenceCents
+      : 0;
 
   const softCap = Math.max(
     ref * REVENUE_CAP_MULTIPLIER,
-    REVENUE_CAP_FLOOR_CENTS,
+    REVENUE_CAP_FLOOR_CENTS
   );
 
-  const maxAllowed = Math.min(softCap, HARD_MAX_RECOVERY_CENTS);
+  const maxAllowed = Math.min(
+    softCap,
+    HARD_MAX_RECOVERY_CENTS
+  );
 
   if (claimedCents > maxAllowed) {
     const maxDollars = (maxAllowed / 100).toFixed(2);
+
     return {
       ok: false,
       error:
@@ -101,7 +164,10 @@ function capRecoveryAmount(claimedCents, referenceCents) {
     };
   }
 
-  return { ok: true, amountCents: claimedCents };
+  return {
+    ok: true,
+    amountCents: claimedCents,
+  };
 }
 
 module.exports = {
@@ -110,6 +176,7 @@ module.exports = {
   REVENUE_CAP_FLOOR_CENTS,
   HARD_MAX_RECOVERY_CENTS,
   isWithinAttributionWindow,
+  getAttributionLevel,
   qualifiesForRecovery,
   capRecoveryAmount,
 };
