@@ -2,6 +2,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
+const { normalizePhone } = require('../lib/phone');
 
 const router = express.Router();
 
@@ -166,11 +167,28 @@ router.post(
     authToken: process.env.TWILIO_AUTH_TOKEN,
   }),
   async (req, res) => {
-    const from = (req.body.From || '').trim();
+    const rawFrom = (req.body.From || '').trim();
     const originalBody = (req.body.Body || '').trim();
     const normalizedBody = originalBody.toLowerCase();
     const commandBody = originalBody.toUpperCase();
     const twilioSid = req.body.MessageSid || null;
+
+    // Normalize the sender's phone to E.164 immediately, BEFORE any DB
+    // lookup. Every downstream .eq('phone', from) — STOP, START, and
+    // customer lookup for reply linking — relies on this being consistent
+    // with what we store in the customers table.
+    //
+    // If normalization fails (extremely unusual — Twilio always sends
+    // E.164), we still log the reply but skip the customer lookups since
+    // we can't match anything.
+    const from = normalizePhone(rawFrom) || rawFrom;
+
+    if (from !== rawFrom) {
+      console.log('[Inbound SMS] Normalized phone:', {
+        raw: rawFrom,
+        normalized: from,
+      });
+    }
 
     const STOP_WORDS = [
       'STOP',
@@ -205,19 +223,34 @@ router.post(
       // STOP commands are exact matches. A normal sentence containing
       // "stop" should not be treated as an opt-out command here.
       if (STOP_WORDS.includes(commandBody)) {
-        const { error } = await supabaseAdmin
+        const { data: updated, error } = await supabaseAdmin
           .from('customers')
           .update({
             opted_out: true,
             opted_out_at: new Date().toISOString(),
           })
-          .eq('phone', from);
+          .eq('phone', from)
+          .select('id');
 
         if (error) {
           throw new Error(`Failed to process STOP: ${error.message}`);
         }
 
-        console.log('SMS opt-out processed:', { from });
+        if (!updated || updated.length === 0) {
+          // Edge case: STOP received from a phone number that doesn't
+          // exist in customers. This is rare — most inbound messages
+          // come from existing customers or missed-callers who already
+          // have stub rows. Log so we can see if it happens.
+          console.warn(
+            '[Inbound SMS] STOP received from unknown phone (no matching customer):',
+            { from }
+          );
+        } else {
+          console.log('SMS opt-out processed:', {
+            from,
+            rows_updated: updated.length,
+          });
+        }
       }
 
       // ---------------------------------------------------------------
@@ -227,19 +260,30 @@ router.post(
       // existed. Conversational messages such as "yes when can you come"
       // continue below and can become hot leads.
       else if (START_WORDS.includes(commandBody)) {
-        const { error } = await supabaseAdmin
+        const { data: updated, error } = await supabaseAdmin
           .from('customers')
           .update({
             opted_out: false,
             opted_out_at: null,
           })
-          .eq('phone', from);
+          .eq('phone', from)
+          .select('id');
 
         if (error) {
           throw new Error(`Failed to process START: ${error.message}`);
         }
 
-        console.log('SMS opt-in processed:', { from });
+        if (!updated || updated.length === 0) {
+          console.warn(
+            '[Inbound SMS] START received from unknown phone (no matching customer):',
+            { from }
+          );
+        } else {
+          console.log('SMS opt-in processed:', {
+            from,
+            rows_updated: updated.length,
+          });
+        }
       }
 
       // ---------------------------------------------------------------
