@@ -264,15 +264,16 @@ async function runEstimateFollowups() {
       // the estimate update below is what governs retry safety.
       const { error: logError } = await supabaseAdmin
         .from('sms_outbound')
-        .insert({
-          business_id: estimate.business_id,
-          customer_id: estimate.customer_id,
-          to_phone: customer.phone,
-          body: message,
-          twilio_sid: twilioMessage.sid,
-          status: 'sent',
-          source_type: 'estimate_followup_auto',
-        });
+       .insert({
+  business_id: estimate.business_id,
+  customer_id: estimate.customer_id,
+  to_phone: customer.phone,
+  body: message,
+  twilio_sid: twilioMessage.sid,
+  status: 'sent',
+  source_type: 'estimate_followup_auto',
+  source_id: estimate.id,
+});
 
       if (logError) {
         console.error(
