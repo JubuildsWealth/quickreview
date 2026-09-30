@@ -8,7 +8,6 @@ const twilioClient = twilio(
 );
 
 // Don't text the same caller more than once every N hours.
-// Prevents someone who calls 5 times in a row from getting 5 texts.
 const DUPLICATE_TEXT_COOLDOWN_HOURS = 24;
 
 async function handleMissedCall({
@@ -18,11 +17,9 @@ async function handleMissedCall({
   callStatus,
   callDurationSec,
 }) {
-  // Normalize the caller's phone to E.164 immediately, before ANY
-  // DB lookup, insert, or SMS send. Twilio should already send E.164
-  // format, but normalizing here guarantees it and future-proofs
-  // against upstream changes. Every downstream .eq('phone', ...)
-  // and .insert({phone, ...}) relies on this being consistent.
+  // -------------------------------------------------------------
+  // 0. Normalize caller phone immediately.
+  // -------------------------------------------------------------
   const callerPhone = normalizePhone(rawCallerPhone);
 
   if (!callerPhone) {
@@ -41,7 +38,9 @@ async function handleMissedCall({
   const businessId = process.env.MISSED_CALL_TEST_BUSINESS_ID;
 
   if (!businessId) {
-    console.error('[Missed Call] MISSED_CALL_TEST_BUSINESS_ID is not set.');
+    console.error(
+      '[Missed Call] MISSED_CALL_TEST_BUSINESS_ID is not set.'
+    );
     return;
   }
 
@@ -72,6 +71,7 @@ async function handleMissedCall({
     console.log(
       `[Missed Call] Automation disabled for business ${businessId}. Logging call but not texting.`
     );
+
     await logMissedCall({
       businessId,
       callerPhone,
@@ -81,6 +81,7 @@ async function handleMissedCall({
       callSid,
       skippedReason: 'automation_disabled',
     });
+
     return;
   }
 
@@ -91,6 +92,7 @@ async function handleMissedCall({
     console.log(
       `[Missed Call] Subscription inactive for ${businessId}. Skipping.`
     );
+
     await logMissedCall({
       businessId,
       callerPhone,
@@ -100,12 +102,12 @@ async function handleMissedCall({
       callSid,
       skippedReason: 'subscription_inactive',
     });
+
     return;
   }
 
   // -------------------------------------------------------------
-  // 4. Duplicate protection: did we already text this caller
-  //    recently for this business?
+  // 4. Duplicate protection.
   // -------------------------------------------------------------
   const cooldownCutoff = new Date(
     Date.now() - DUPLICATE_TEXT_COOLDOWN_HOURS * 60 * 60 * 1000
@@ -124,6 +126,7 @@ async function handleMissedCall({
     console.log(
       `[Missed Call] Already texted ${callerPhone} recently. Skipping.`
     );
+
     await logMissedCall({
       businessId,
       callerPhone,
@@ -133,27 +136,33 @@ async function handleMissedCall({
       callSid,
       skippedReason: 'duplicate_recent',
     });
+
     return;
   }
 
   // -------------------------------------------------------------
-  // 5. Look up if this caller is an existing customer.
-  //    If so, respect their consent + opt-out settings.
-  //    If not, we still text them — cold missed-call replies
-  //    are standard in this category and expected by the caller
-  //    (they just tried to reach the business).
+  // 5. Look up existing customer.
   // -------------------------------------------------------------
-  const { data: existingCustomer } = await supabaseAdmin
-    .from('customers')
-    .select('id, name, sms_consent, opted_out, language')
-    .eq('business_id', businessId)
-    .eq('phone', callerPhone)
-    .maybeSingle();
+  const { data: existingCustomer, error: customerLookupError } =
+    await supabaseAdmin
+      .from('customers')
+      .select('id, name, sms_consent, opted_out, language')
+      .eq('business_id', businessId)
+      .eq('phone', callerPhone)
+      .maybeSingle();
+
+  if (customerLookupError) {
+    console.error(
+      `[Missed Call] Failed to look up customer ${callerPhone}:`,
+      customerLookupError.message
+    );
+  }
 
   if (existingCustomer && existingCustomer.opted_out) {
     console.log(
       `[Missed Call] Caller ${callerPhone} has opted out. Skipping.`
     );
+
     await logMissedCall({
       businessId,
       callerPhone,
@@ -164,81 +173,69 @@ async function handleMissedCall({
       customerId: existingCustomer.id,
       skippedReason: 'opted_out',
     });
+
     return;
   }
 
   // -------------------------------------------------------------
-  // 6. If this is a cold caller (not in our customers table),
-  //    create a stub row so inbound replies can link back to
-  //    them and to this business. Without this, hot-lead replies
-  //    from unknown callers get orphaned and the owner is never
-  //    notified.
+  // 6. Create a stub for cold callers.
+  //
+  // customers has UNIQUE(business_id, phone). If two requests race,
+  // one insert wins. The request that receives PostgreSQL 23505
+  // reloads and reuses the row created by the winner.
   // -------------------------------------------------------------
   let customer = existingCustomer;
 
- if (!customer) {
-  const { data: newCustomer, error: createError } = await supabaseAdmin
-    .from('customers')
-    .insert({
-      business_id: businessId,
-      phone: callerPhone,
-      name: 'Unknown caller',
-      sms_consent: true, // implied by them calling us
-    })
-    .select('id, name, sms_consent, opted_out, language')
-    .single();
+  if (!customer) {
+    const { data: newCustomer, error: createError } =
+      await supabaseAdmin
+        .from('customers')
+        .insert({
+          business_id: businessId,
+          phone: callerPhone,
+          name: 'Unknown caller',
+          sms_consent: true,
+        })
+        .select('id, name, sms_consent, opted_out, language')
+        .single();
 
-  if (createError) {
-    // Another request may have created this same customer after our
-    // initial lookup but before this insert. The database UNIQUE
-    // constraint on (business_id, phone) is the source of truth.
-    if (createError.code === '23505') {
-      const { data: racedCustomer, error: lookupError } =
-        await supabaseAdmin
-          .from('customers')
-          .select('id, name, sms_consent, opted_out, language')
-          .eq('business_id', businessId)
-          .eq('phone', callerPhone)
-          .maybeSingle();
-
-      if (lookupError || !racedCustomer) {
-        console.error(
-          `[Missed Call] Duplicate stub detected for ${callerPhone}, but failed to reload customer:`,
-          lookupError?.message
-        );
-      } else {
-        customer = racedCustomer;
+    if (createError) {
+      if (createError.code === '23505') {
         console.log(
-          `[Missed Call] Reused concurrently created customer ${customer.id} for ${callerPhone}`
+          `[Missed Call] Stub creation raced for ${callerPhone}. Reloading existing customer.`
+        );
+
+        const { data: racedCustomer, error: racedLookupError } =
+          await supabaseAdmin
+            .from('customers')
+            .select('id, name, sms_consent, opted_out, language')
+            .eq('business_id', businessId)
+            .eq('phone', callerPhone)
+            .maybeSingle();
+
+        if (racedLookupError || !racedCustomer) {
+          console.error(
+            `[Missed Call] Duplicate stub detected for ${callerPhone}, but failed to reload customer:`,
+            racedLookupError?.message || 'Customer not found after conflict'
+          );
+        } else {
+          customer = racedCustomer;
+
+          console.log(
+            `[Missed Call] Reused concurrently created customer ${customer.id} for ${callerPhone}`
+          );
+        }
+      } else {
+        console.error(
+          `[Missed Call] Failed to create stub customer for ${callerPhone}:`,
+          createError.message,
+          createError.details,
+          createError.hint
         );
       }
     } else {
-      console.error(
-        `[Missed Call] Failed to create stub customer for ${callerPhone}:`,
-        createError.message,
-        createError.details,
-        createError.hint
-      );
-    }
-  } else {
-    customer = newCustomer;
-    console.log(
-      `[Missed Call] Created stub customer ${customer.id} for cold caller ${callerPhone}`
-    );
-  }
-}
-
-    if (createError) {
-      console.error(
-        `[Missed Call] Failed to create stub customer for ${callerPhone}:`,
-        createError.message,
-        createError.details,
-        createError.hint
-      );
-      // Non-fatal — we can still send the text, we just lose linkage.
-      // Better to text them and have an orphaned reply than not text at all.
-    } else {
       customer = newCustomer;
+
       console.log(
         `[Missed Call] Created stub customer ${customer.id} for cold caller ${callerPhone}`
       );
@@ -246,15 +243,20 @@ async function handleMissedCall({
   }
 
   // -------------------------------------------------------------
-  // 7. Build and send the message.
+  // 7. Build message.
   // -------------------------------------------------------------
   const language = (
     (customer && customer.language) || 'en'
-  ).toLowerCase().slice(0, 2);
+  )
+    .toLowerCase()
+    .slice(0, 2);
 
-  const greeting = customer && customer.name && customer.name !== 'Unknown caller'
-    ? `Hi ${customer.name}`
-    : 'Hi';
+  const greeting =
+    customer &&
+    customer.name &&
+    customer.name !== 'Unknown caller'
+      ? `Hi ${customer.name}`
+      : 'Hi';
 
   const messages = {
     en:
@@ -270,15 +272,17 @@ async function handleMissedCall({
 
   const message = messages[language] || messages.en;
 
+  // -------------------------------------------------------------
+  // 8. Send SMS + log result.
+  // -------------------------------------------------------------
   try {
     const twilioMessage = await twilioClient.messages.create({
       body: message,
-      from: arovaPhone,   // reply from the same Arova number they called
+      from: arovaPhone,
       to: callerPhone,
     });
 
-    // Log the outbound SMS. Non-fatal if this fails —
-    // the missed_calls log below is what governs duplicate protection.
+    // Non-fatal if outbound logging fails.
     const { error: logError } = await supabaseAdmin
       .from('sms_outbound')
       .insert({
@@ -333,9 +337,10 @@ async function handleMissedCall({
 }
 
 // -------------------------------------------------------------
-// Helper: always log the missed call, whether we texted or not.
-// twilio_call_sid is UNIQUE — insert conflicts are ignored so
-// Twilio's automatic webhook retries don't create dup rows.
+// Helper: always log the missed call.
+//
+// twilio_call_sid is UNIQUE. PostgreSQL 23505 means Twilio
+// retried the same webhook, which is expected.
 // -------------------------------------------------------------
 async function logMissedCall({
   businessId,
@@ -364,8 +369,6 @@ async function logMissedCall({
       text_skipped_reason: skippedReason,
     });
 
-  // Duplicate key on twilio_call_sid = Twilio retried the webhook.
-  // That's expected, not an error.
   if (error && error.code !== '23505') {
     console.error(
       `[Missed Call] Failed to log missed call ${callSid}:`,
