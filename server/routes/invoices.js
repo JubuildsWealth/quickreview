@@ -2,7 +2,7 @@ const express = require('express');
 const twilio = require('twilio');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
-const { qualifiesForRecovery } = require('../lib/attribution');
+const { getAttributionLevel } = require('../lib/attribution');
 const { normalizePhone } = require('../lib/phone');
 const router = express.Router();
 
@@ -134,12 +134,51 @@ router.patch('/:id/paid', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Invoice already marked paid.' });
   }
 
-   const remindersSent = current.reminder_count || 0;
-  const arovaAttributed = qualifiesForRecovery({
-    reminderCount: remindersSent,
-    lastRemindedAt: current.last_reminded_at,
-  });
-  const nowIso = new Date().toISOString();
+  const remindersSent = current.reminder_count || 0;
+const nowIso = new Date().toISOString();
+
+// Look for direct customer engagement with THIS exact invoice.
+// sms.js now links replies using:
+//   related_type = 'invoice'
+//   related_id   = invoice.id
+//
+// We only count a linked reply as attribution evidence if it arrived
+// after the invoice's most recent Arova reminder. That prevents an
+// older conversation about the same invoice from upgrading a later
+// recovery to "confirmed".
+let hasLinkedReply = false;
+
+if (remindersSent > 0 && current.last_reminded_at) {
+  const { data: linkedReply, error: replyErr } = await supabaseAdmin
+    .from('sms_replies')
+    .select('id, received_at')
+    .eq('business_id', business.id)
+    .eq('customer_id', current.customer_id)
+    .eq('related_type', 'invoice')
+    .eq('related_id', current.id)
+    .gte('received_at', current.last_reminded_at)
+    .lte('received_at', nowIso)
+    .order('received_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (replyErr) {
+    console.error(
+      '[Invoice paid] linked reply lookup failed:',
+      replyErr.message
+    );
+  } else {
+    hasLinkedReply = Boolean(linkedReply);
+  }
+}
+
+const attributionLevel = getAttributionLevel({
+  reminderCount: remindersSent,
+  lastRemindedAt: current.last_reminded_at,
+  hasLinkedReply,
+});
+
+const arovaAttributed = attributionLevel !== 'none';
 
   const { data: updated, error: updateErr } = await req.supabase
     .from('invoices')
@@ -161,16 +200,17 @@ router.patch('/:id/paid', requireAuth, async (req, res) => {
   if (arovaAttributed) {
     const { error: eventErr } = await supabaseAdmin
       .from('recovery_events')
-      .insert({
-        business_id: business.id,
-        customer_id: current.customer_id,
-        source_type: 'invoice',
-        source_id: current.id,
-        amount_cents: current.amount_cents,
-        reminder_count_at_recovery: remindersSent,
-        description: current.description,
-        recovered_at: nowIso,
-      });
+     .insert({
+  business_id: business.id,
+  customer_id: current.customer_id,
+  source_type: 'invoice',
+  source_id: current.id,
+  amount_cents: current.amount_cents,
+  reminder_count_at_recovery: remindersSent,
+  description: current.description,
+  recovered_at: nowIso,
+  attribution_level: attributionLevel,
+});
 
     if (eventErr && eventErr.code !== '23505') {
       // 23505 = unique violation — event already exists (double-tap safety)
