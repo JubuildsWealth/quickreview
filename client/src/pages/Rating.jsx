@@ -162,11 +162,7 @@ export default function Rating() {
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               rows={3}
-              placeholder={
-                selected >= 4
-                  ? 'Want to add anything? (optional)'
-                  : 'What could we have done better? (optional)'
-              }
+            placeholder="Any additional comments? (optional)"
               className="w-full border border-gray-200 rounded-xl p-3.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition resize-none"
             />
 
