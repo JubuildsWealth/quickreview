@@ -176,17 +176,57 @@ async function handleMissedCall({
   // -------------------------------------------------------------
   let customer = existingCustomer;
 
-  if (!customer) {
-    const { data: newCustomer, error: createError } = await supabaseAdmin
-      .from('customers')
-      .insert({
-        business_id: businessId,
-        phone: callerPhone,
-        name: 'Unknown caller',
-        sms_consent: true, // implied by them calling us
-      })
-      .select('id, name, sms_consent, opted_out, language')
-      .single();
+ if (!customer) {
+  const { data: newCustomer, error: createError } = await supabaseAdmin
+    .from('customers')
+    .insert({
+      business_id: businessId,
+      phone: callerPhone,
+      name: 'Unknown caller',
+      sms_consent: true, // implied by them calling us
+    })
+    .select('id, name, sms_consent, opted_out, language')
+    .single();
+
+  if (createError) {
+    // Another request may have created this same customer after our
+    // initial lookup but before this insert. The database UNIQUE
+    // constraint on (business_id, phone) is the source of truth.
+    if (createError.code === '23505') {
+      const { data: racedCustomer, error: lookupError } =
+        await supabaseAdmin
+          .from('customers')
+          .select('id, name, sms_consent, opted_out, language')
+          .eq('business_id', businessId)
+          .eq('phone', callerPhone)
+          .maybeSingle();
+
+      if (lookupError || !racedCustomer) {
+        console.error(
+          `[Missed Call] Duplicate stub detected for ${callerPhone}, but failed to reload customer:`,
+          lookupError?.message
+        );
+      } else {
+        customer = racedCustomer;
+        console.log(
+          `[Missed Call] Reused concurrently created customer ${customer.id} for ${callerPhone}`
+        );
+      }
+    } else {
+      console.error(
+        `[Missed Call] Failed to create stub customer for ${callerPhone}:`,
+        createError.message,
+        createError.details,
+        createError.hint
+      );
+    }
+  } else {
+    customer = newCustomer;
+    console.log(
+      `[Missed Call] Created stub customer ${customer.id} for cold caller ${callerPhone}`
+    );
+  }
+}
 
     if (createError) {
       console.error(
