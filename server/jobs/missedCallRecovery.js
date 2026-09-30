@@ -162,24 +162,24 @@ async function handleMissedCall({
   let customer = existingCustomer;
 
   if (!customer) {
-   const { data: newCustomer, error: createError } = await supabaseAdmin
-  .from('customers')
-  .insert({
-    business_id: businessId,
-    phone: callerPhone,
-    name: 'Unknown caller',
-    sms_consent: true, // implied by them calling us
-  })
-  .select('id, name, sms_consent, opted_out, language')
-  .single();
+    const { data: newCustomer, error: createError } = await supabaseAdmin
+      .from('customers')
+      .insert({
+        business_id: businessId,
+        phone: callerPhone,
+        name: 'Unknown caller',
+        sms_consent: true, // implied by them calling us
+      })
+      .select('id, name, sms_consent, opted_out, language')
+      .single();
 
     if (createError) {
       console.error(
         `[Missed Call] Failed to create stub customer for ${callerPhone}:`,
-        createError.message
+        createError.message,
         createError.details,
         createError.hint
-       );
+      );
       // Non-fatal — we can still send the text, we just lose linkage.
       // Better to text them and have an orphaned reply than not text at all.
     } else {
@@ -197,7 +197,7 @@ async function handleMissedCall({
     (customer && customer.language) || 'en'
   ).toLowerCase().slice(0, 2);
 
-  const greeting = customer && customer.name
+  const greeting = customer && customer.name && customer.name !== 'Unknown caller'
     ? `Hi ${customer.name}`
     : 'Hi';
 
