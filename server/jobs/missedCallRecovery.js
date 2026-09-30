@@ -153,14 +153,49 @@ async function handleMissedCall({
   }
 
   // -------------------------------------------------------------
-  // 6. Build and send the message.
+  // 6. If this is a cold caller (not in our customers table),
+  //    create a stub row so inbound replies can link back to
+  //    them and to this business. Without this, hot-lead replies
+  //    from unknown callers get orphaned and the owner is never
+  //    notified.
+  // -------------------------------------------------------------
+  let customer = existingCustomer;
+
+  if (!customer) {
+    const { data: newCustomer, error: createError } = await supabaseAdmin
+      .from('customers')
+      .insert({
+        business_id: businessId,
+        phone: callerPhone,
+        sms_consent: true, // implied by them calling us
+      })
+      .select('id, name, sms_consent, opted_out, language')
+      .single();
+
+    if (createError) {
+      console.error(
+        `[Missed Call] Failed to create stub customer for ${callerPhone}:`,
+        createError.message
+      );
+      // Non-fatal — we can still send the text, we just lose linkage.
+      // Better to text them and have an orphaned reply than not text at all.
+    } else {
+      customer = newCustomer;
+      console.log(
+        `[Missed Call] Created stub customer ${customer.id} for cold caller ${callerPhone}`
+      );
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 7. Build and send the message.
   // -------------------------------------------------------------
   const language = (
-    (existingCustomer && existingCustomer.language) || 'en'
+    (customer && customer.language) || 'en'
   ).toLowerCase().slice(0, 2);
 
-  const greeting = existingCustomer
-    ? `Hi ${existingCustomer.name}`
+  const greeting = customer && customer.name
+    ? `Hi ${customer.name}`
     : 'Hi';
 
   const messages = {
@@ -177,7 +212,7 @@ async function handleMissedCall({
 
   const message = messages[language] || messages.en;
 
-   try {
+  try {
     const twilioMessage = await twilioClient.messages.create({
       body: message,
       from: arovaPhone,   // reply from the same Arova number they called
@@ -190,7 +225,7 @@ async function handleMissedCall({
       .from('sms_outbound')
       .insert({
         business_id: businessId,
-        customer_id: existingCustomer ? existingCustomer.id : null,
+        customer_id: customer ? customer.id : null,
         to_phone: callerPhone,
         body: message,
         twilio_sid: twilioMessage.sid,
@@ -212,7 +247,7 @@ async function handleMissedCall({
       callStatus,
       callDurationSec,
       callSid,
-      customerId: existingCustomer ? existingCustomer.id : null,
+      customerId: customer ? customer.id : null,
       textSentAt: new Date().toISOString(),
       textTwilioSid: twilioMessage.sid,
     });
@@ -233,7 +268,7 @@ async function handleMissedCall({
       callStatus,
       callDurationSec,
       callSid,
-      customerId: existingCustomer ? existingCustomer.id : null,
+      customerId: customer ? customer.id : null,
       skippedReason: `send_error: ${error.message}`.slice(0, 200),
     });
   }
