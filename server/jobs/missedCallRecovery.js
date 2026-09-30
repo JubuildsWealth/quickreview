@@ -1,5 +1,6 @@
 const twilio = require('twilio');
 const { supabaseAdmin } = require('../lib/supabase');
+const { normalizePhone } = require('../lib/phone');
 
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -12,11 +13,25 @@ const DUPLICATE_TEXT_COOLDOWN_HOURS = 24;
 
 async function handleMissedCall({
   callSid,
-  callerPhone,
+  callerPhone: rawCallerPhone,
   arovaPhone,
   callStatus,
   callDurationSec,
 }) {
+  // Normalize the caller's phone to E.164 immediately, before ANY
+  // DB lookup, insert, or SMS send. Twilio should already send E.164
+  // format, but normalizing here guarantees it and future-proofs
+  // against upstream changes. Every downstream .eq('phone', ...)
+  // and .insert({phone, ...}) relies on this being consistent.
+  const callerPhone = normalizePhone(rawCallerPhone);
+
+  if (!callerPhone) {
+    console.error(
+      `[Missed Call] Could not normalize caller phone ${rawCallerPhone} for ${callSid}. Aborting.`
+    );
+    return;
+  }
+
   console.log(`[Missed Call] Handling ${callSid} from ${callerPhone}`);
 
   // -------------------------------------------------------------
