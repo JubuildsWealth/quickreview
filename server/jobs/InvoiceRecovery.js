@@ -1,5 +1,6 @@
 const twilio = require('twilio');
 const { supabaseAdmin } = require('../lib/supabase');
+const { normalizePhone } = require('../lib/phone');
 
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -174,6 +175,19 @@ async function runInvoiceRecovery() {
       continue;
     }
 
+    // Normalize the customer's phone to E.164 before sending.
+    // Every customer row created via customers.js is already E.164, but
+    // this defends against any legacy rows or future imports that skipped
+    // normalization on the way in.
+    const toPhone = normalizePhone(customer.phone);
+
+    if (!toPhone) {
+      console.error(
+        `[Invoice Recovery] Skipping ${invoice.id}: could not normalize customer phone ${customer.phone}.`
+      );
+      continue;
+    }
+
     // Re-check the invoice immediately before sending.
     // This reduces the chance of reminding someone whose invoice
     // was marked paid after the initial query.
@@ -228,18 +242,26 @@ async function runInvoiceRecovery() {
       ? ` ${invoice.payment_note}.`
       : '';
 
+    // Message copy note:
+    // "If you've already paid, please disregard" softens the tone and
+    // covers the real case where a customer paid out-of-band (cash,
+    // Zelle, check) and the office hasn't marked it paid in Arova yet.
+    // This protects the customer relationship from an accusatory-sounding
+    // reminder when the balance is already settled.
     const messages = {
       en:
-        `Hi ${customer.name}, a friendly reminder from ${business.name}: ` +
-        `you have a balance of $${amount}${forPart}.` +
+        `Hi ${customer.name}, quick note from ${business.name} — ` +
+        `showing a $${amount} balance${forPart}.` +
         payPart +
-        ` Reply STOP to opt out.`,
+        ` If you've already paid, please disregard. Otherwise, thanks for taking care of it. ` +
+        `Reply STOP to opt out.`,
 
       es:
-        `Hola ${customer.name}, un recordatorio amistoso de ${business.name}: ` +
-        `tiene un saldo pendiente de $${amount}${forPart}.` +
+        `Hola ${customer.name}, un aviso de ${business.name} — ` +
+        `mostramos un saldo pendiente de $${amount}${forPart}.` +
         payPart +
-        ` Responda STOP para cancelar.`,
+        ` Si ya realizó el pago, ignore este mensaje. De lo contrario, gracias por atenderlo. ` +
+        `Responda STOP para cancelar.`,
     };
 
     const message = messages[customer.language] || messages.en;
@@ -248,7 +270,7 @@ async function runInvoiceRecovery() {
       const twilioMessage = await twilioClient.messages.create({
         body: message,
         from: process.env.TWILIO_PHONE_NUMBER,
-        to: customer.phone,
+        to: toPhone,
       });
 
       const remindedAt = new Date().toISOString();
@@ -260,7 +282,7 @@ async function runInvoiceRecovery() {
         .insert({
           business_id: invoice.business_id,
           customer_id: invoice.customer_id,
-          to_phone: customer.phone,
+          to_phone: toPhone,
           body: message,
           twilio_sid: twilioMessage.sid,
           status: 'sent',
