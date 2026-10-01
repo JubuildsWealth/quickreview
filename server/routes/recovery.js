@@ -1,8 +1,16 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { supabaseAdmin } = require('../lib/supabase');
+const {
+  evaluateRevenueOpportunity,
+  sortRecoveryOpportunities,
+} = require('../lib/recoveryEngine');
 
 const router = express.Router();
+
+// -----------------------------------------------------------------------------
+// Shared helpers
+// -----------------------------------------------------------------------------
 
 async function getBusiness(req, res) {
   const { data: business, error } = await req.supabase
@@ -27,63 +35,63 @@ function daysSince(dateString) {
 
   if (Number.isNaN(then)) return 0;
 
-  return Math.max(0, Math.floor((now - then) / (1000 * 60 * 60 * 24)));
+  return Math.max(
+    0,
+    Math.floor((now - then) / (1000 * 60 * 60 * 24))
+  );
 }
 
-function getPriority(daysSinceActivity) {
-  if (daysSinceActivity >= 7) {
-    return {
-      priority: 'high',
-      priority_rank: 3,
-    };
-  }
+function normalizeRevenueOpportunity({
+  type,
+  row,
+}) {
+  const isEstimate = type === 'estimate';
 
-  if (daysSinceActivity >= 3) {
-    return {
-      priority: 'medium',
-      priority_rank: 2,
-    };
-  }
+  const openedAt = isEstimate ? row.sent_at : row.created_at;
+  const lastActivityAt = row.last_reminded_at || openedAt;
+  const inactiveDays = daysSince(lastActivityAt);
+  const reminderCount = row.reminder_count || 0;
+
+  const decision = evaluateRevenueOpportunity({
+    type,
+    amount_cents: row.amount_cents || 0,
+    days_since_activity: inactiveDays,
+    reminder_count: reminderCount,
+    needs_human_attention: row.needs_human_attention === true,
+    attention_reason: row.attention_reason || null,
+  });
 
   return {
-    priority: 'low',
-    priority_rank: 1,
+    id: row.id,
+    type,
+    source_id: row.id,
+
+    customer_id: row.customer_id,
+    customer_name: row.customers?.name || 'Customer',
+    customer_phone: row.customers?.phone || null,
+
+    amount_cents: row.amount_cents || 0,
+    description: row.description || null,
+    status: row.status,
+
+    opened_at: openedAt,
+    last_activity_at: lastActivityAt,
+    days_since_activity: inactiveDays,
+    reminder_count: reminderCount,
+
+    needs_human_attention: row.needs_human_attention === true,
+    attention_reason: row.attention_reason || null,
+
+    ...decision,
   };
 }
 
-function buildReason(type, daysSinceActivity, reminderCount) {
-  // No nudge sent yet
-  if (reminderCount === 0) {
-    if (daysSinceActivity === 0) {
-      return 'Just opened · ready to nudge';
-    }
-
-    if (daysSinceActivity === 1) {
-      return '1 day open · no nudge sent';
-    }
-
-    return `${daysSinceActivity} days cold · no nudge sent`;
-  }
-
-  // At least one nudge sent
-  const totalLabel =
-    reminderCount === 1 ? '1 total' : `${reminderCount} total`;
-
-  if (daysSinceActivity === 0) {
-    return 'Just nudged · waiting on reply';
-  }
-
-  if (daysSinceActivity === 1) {
-    return `Nudged yesterday · ${totalLabel}`;
-  }
-
-  return `${daysSinceActivity} days since last nudge · ${totalLabel}`;
-}
-
-// ---------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // GET /api/recovery/events?limit=10
+//
 // Recent recoveries for the "here's what Arova did" list.
-// ---------------------------------------------------------------
+// -----------------------------------------------------------------------------
+
 router.get('/events', requireAuth, async (req, res) => {
   const business = await getBusiness(req, res);
   if (!business) return;
@@ -112,15 +120,15 @@ router.get('/events', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
-    const events = (data || []).map((e) => ({
-      id: e.id,
-      source_type: e.source_type,
-      source_id: e.source_id,
-      amount_cents: e.amount_cents,
-      reminder_count_at_recovery: e.reminder_count_at_recovery,
-      description: e.description,
-      customer_name: e.customers?.name || 'Customer',
-      recovered_at: e.recovered_at,
+    const events = (data || []).map((event) => ({
+      id: event.id,
+      source_type: event.source_type,
+      source_id: event.source_id,
+      amount_cents: event.amount_cents,
+      reminder_count_at_recovery: event.reminder_count_at_recovery,
+      description: event.description,
+      customer_name: event.customers?.name || 'Customer',
+      recovered_at: event.recovered_at,
     }));
 
     res.json({
@@ -133,12 +141,12 @@ router.get('/events', requireAuth, async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // GET /api/recovery/summary
-// Higher-fidelity totals than /dashboard/summary — includes
-// biggest single recovery + all-time totals. Used by future
-// Impact Report and weekly digest.
-// ---------------------------------------------------------------
+//
+// Higher-fidelity recovery totals used by reporting surfaces.
+// -----------------------------------------------------------------------------
+
 router.get('/summary', requireAuth, async (req, res) => {
   const business = await getBusiness(req, res);
   if (!business) return;
@@ -194,18 +202,19 @@ router.get('/summary', requireAuth, async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // GET /api/recovery/queue
 //
-// Open estimates + unpaid invoices, normalized into one queue.
+// Recovery Engine V1.
 //
-// Priority is intentionally deterministic:
-//   High   = 7+ days since last activity
-//   Medium = 3–6 days
-//   Low    = 0–2 days
+// Open estimates + unpaid invoices are normalized into a common opportunity
+// shape and evaluated by recoveryEngine.js.
 //
-// Within the same priority, larger opportunities rank first.
-// ---------------------------------------------------------------
+// The route gathers facts.
+// The engine makes the recovery decision.
+// The frontend renders that decision.
+// -----------------------------------------------------------------------------
+
 router.get('/queue', requireAuth, async (req, res) => {
   const business = await getBusiness(req, res);
   if (!business) return;
@@ -223,6 +232,8 @@ router.get('/queue', requireAuth, async (req, res) => {
           sent_at,
           last_reminded_at,
           reminder_count,
+          needs_human_attention,
+          attention_reason,
           customers ( id, name, phone )
         `)
         .eq('business_id', business.id)
@@ -239,93 +250,35 @@ router.get('/queue', requireAuth, async (req, res) => {
           created_at,
           last_reminded_at,
           reminder_count,
+          needs_human_attention,
+          attention_reason,
           customers ( id, name, phone )
         `)
         .eq('business_id', business.id)
-        .neq('status', 'paid'),
+        .eq('status', 'unpaid'),
     ]);
 
     if (estimatesRes.error) throw estimatesRes.error;
     if (invoicesRes.error) throw invoicesRes.error;
 
-    const estimates = (estimatesRes.data || []).map((estimate) => {
-      const lastActivityAt =
-        estimate.last_reminded_at || estimate.sent_at;
-
-      const inactiveDays = daysSince(lastActivityAt);
-      const priorityData = getPriority(inactiveDays);
-      const reminderCount = estimate.reminder_count || 0;
-
-      return {
-        id: estimate.id,
+    const estimates = (estimatesRes.data || []).map((estimate) =>
+      normalizeRevenueOpportunity({
         type: 'estimate',
-        customer_id: estimate.customer_id,
-        customer_name: estimate.customers?.name || 'Customer',
-        customer_phone: estimate.customers?.phone || null,
-        amount_cents: estimate.amount_cents || 0,
-        description: estimate.description || null,
-        status: estimate.status,
-        opened_at: estimate.sent_at,
-        last_activity_at: lastActivityAt,
-        days_since_activity: inactiveDays,
-        reminder_count: reminderCount,
-        priority: priorityData.priority,
-        priority_rank: priorityData.priority_rank,
-        reason: buildReason(
-          'estimate',
-          inactiveDays,
-          reminderCount
-        ),
-                action_label: 'Send reminder',
-      };
-    });
+        row: estimate,
+      })
+    );
 
-    const invoices = (invoicesRes.data || []).map((invoice) => {
-      const lastActivityAt =
-        invoice.last_reminded_at || invoice.created_at;
-
-      const inactiveDays = daysSince(lastActivityAt);
-      const priorityData = getPriority(inactiveDays);
-      const reminderCount = invoice.reminder_count || 0;
-
-      return {
-        id: invoice.id,
+    const invoices = (invoicesRes.data || []).map((invoice) =>
+      normalizeRevenueOpportunity({
         type: 'invoice',
-        customer_id: invoice.customer_id,
-        customer_name: invoice.customers?.name || 'Customer',
-        customer_phone: invoice.customers?.phone || null,
-        amount_cents: invoice.amount_cents || 0,
-        description: invoice.description || null,
-        status: invoice.status,
-        opened_at: invoice.created_at,
-        last_activity_at: lastActivityAt,
-        days_since_activity: inactiveDays,
-        reminder_count: reminderCount,
-        priority: priorityData.priority,
-        priority_rank: priorityData.priority_rank,
-        reason: buildReason(
-          'invoice',
-          inactiveDays,
-          reminderCount
-        ),
-        action_label: 'Send reminder',
-      };
-    });
+        row: invoice,
+      })
+    );
 
-    const queue = [...estimates, ...invoices].sort((a, b) => {
-      if (b.priority_rank !== a.priority_rank) {
-        return b.priority_rank - a.priority_rank;
-      }
-
-      if (b.amount_cents !== a.amount_cents) {
-        return b.amount_cents - a.amount_cents;
-      }
-
-      return (
-        new Date(a.last_activity_at).getTime() -
-        new Date(b.last_activity_at).getTime()
-      );
-    });
+    const queue = sortRecoveryOpportunities([
+      ...estimates,
+      ...invoices,
+    ]);
 
     const totalAtRiskCents = queue.reduce(
       (total, item) => total + (item.amount_cents || 0),
@@ -336,10 +289,20 @@ router.get('/queue', requireAuth, async (req, res) => {
       (item) => item.priority === 'high'
     ).length;
 
+    const needsHumanCount = queue.filter(
+      (item) => item.needs_human === true
+    ).length;
+
+    const arovaHandlingCount = queue.filter(
+      (item) => item.handling_mode === 'arova'
+    ).length;
+
     res.json({
       total_at_risk_cents: totalAtRiskCents,
       total_items: queue.length,
       high_priority_count: highPriorityCount,
+      needs_human_count: needsHumanCount,
+      arova_handling_count: arovaHandlingCount,
       queue,
     });
   } catch (err) {
