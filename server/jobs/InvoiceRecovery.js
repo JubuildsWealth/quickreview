@@ -14,6 +14,27 @@ const twilioClient = twilio(
 const REMINDER_DELAY_DAYS = 3;
 const MAX_REMINDERS = 3;
 
+async function flagForHumanAttention(invoiceId, reason) {
+  const { error } = await supabaseAdmin
+    .from('invoices')
+    .update({
+      needs_human_attention: true,
+      attention_reason: reason,
+    })
+    .eq('id', invoiceId)
+    .eq('status', 'unpaid');
+
+  if (error) {
+    console.error(
+      `[Invoice Recovery] Failed to flag ${invoiceId} for human attention:`,
+      error.message
+    );
+    return false;
+  }
+
+  return true;
+}
+
 async function runInvoiceRecovery() {
   console.log('[Invoice Recovery] Starting run...');
 
@@ -50,16 +71,17 @@ async function runInvoiceRecovery() {
     return {
       eligible: 0,
       sent: 0,
+      handed_off: 0,
     };
   }
 
   // -------------------------------------------------------------
-  // 2. Find unpaid invoices belonging to enabled businesses.
+  // 2. Load unpaid invoices for enabled businesses.
   //
-  // We intentionally do some timing checks again below in JS:
-  // - brand-new invoices must be at least 3 days old
-  // - previously reminded invoices must have waited another 3 days
-  // - invoices with 3 reminders are finished
+  // IMPORTANT:
+  // We intentionally DO NOT filter out reminder_count >= 3 here.
+  // Those invoices need to enter the processing loop so Arova can
+  // persist a followup_limit_reached human-attention handoff.
   // -------------------------------------------------------------
   const { data: invoices, error: invoicesError } = await supabaseAdmin
     .from('invoices')
@@ -75,6 +97,8 @@ async function runInvoiceRecovery() {
       paid_at,
       last_reminded_at,
       reminder_count,
+      needs_human_attention,
+      attention_reason,
       customers (
         id,
         name,
@@ -101,28 +125,38 @@ async function runInvoiceRecovery() {
   }
 
   // -------------------------------------------------------------
-  // 3. Determine which unpaid invoices are actually due.
+  // 3. Determine which unpaid invoices need processing.
+  //
+  // An invoice is processable when:
+  // - it has reached the reminder limit and needs handoff, OR
+  // - its next reminder is due.
+  //
+  // Already-handed-off invoices are skipped so the hourly cron
+  // doesn't repeatedly process the same terminal state.
   // -------------------------------------------------------------
   const eligibleInvoices = (invoices || []).filter((invoice) => {
     const reminderCount = invoice.reminder_count || 0;
 
-    // Hard stop after 3 automatic reminders.
-    if (reminderCount >= MAX_REMINDERS) {
-      return false;
-    }
-
-    // Extra paid safety check.
     if (invoice.status === 'paid' || invoice.paid_at) {
       return false;
     }
 
-    // If we've already reminded them, wait 3 days from the
-    // most recent reminder.
+    // Already handed off: nothing more for automation to do.
+    if (invoice.needs_human_attention) {
+      return false;
+    }
+
+    // Must enter the loop so we can persist the terminal handoff.
+    if (reminderCount >= MAX_REMINDERS) {
+      return true;
+    }
+
+    // Previously reminded: wait 3 days from the latest reminder.
     if (invoice.last_reminded_at) {
       return invoice.last_reminded_at <= cutoff;
     }
 
-    // Otherwise wait 3 days from invoice creation.
+    // Never reminded: wait 3 days from invoice creation.
     return invoice.created_at <= cutoff;
   });
 
@@ -131,6 +165,7 @@ async function runInvoiceRecovery() {
   );
 
   let sentCount = 0;
+  let handedOffCount = 0;
 
   // -------------------------------------------------------------
   // 4. Process eligible invoices.
@@ -175,10 +210,6 @@ async function runInvoiceRecovery() {
       continue;
     }
 
-    // Normalize the customer's phone to E.164 before sending.
-    // Every customer row created via customers.js is already E.164, but
-    // this defends against any legacy rows or future imports that skipped
-    // normalization on the way in.
     const toPhone = normalizePhone(customer.phone);
 
     if (!toPhone) {
@@ -188,13 +219,23 @@ async function runInvoiceRecovery() {
       continue;
     }
 
-    // Re-check the invoice immediately before sending.
-    // This reduces the chance of reminding someone whose invoice
-    // was marked paid after the initial query.
+    // -----------------------------------------------------------
+    // 5. Fresh-state recheck immediately before any action.
+    // -----------------------------------------------------------
     const { data: freshInvoice, error: freshInvoiceError } =
       await supabaseAdmin
         .from('invoices')
-        .select('status, paid_at, reminder_count, last_reminded_at')
+        .select(`
+          id,
+          business_id,
+          customer_id,
+          status,
+          paid_at,
+          reminder_count,
+          last_reminded_at,
+          needs_human_attention,
+          attention_reason
+        `)
         .eq('id', invoice.id)
         .single();
 
@@ -205,18 +246,43 @@ async function runInvoiceRecovery() {
       continue;
     }
 
-  if (freshInvoice.status !== 'unpaid' || freshInvoice.paid_at) {
-  console.log(
-    `[Invoice Recovery] Skipping ${invoice.id}: invoice is no longer unpaid.`
-  );
-  continue;
-} 
+    if (freshInvoice.status !== 'unpaid' || freshInvoice.paid_at) {
+      console.log(
+        `[Invoice Recovery] Skipping ${invoice.id}: invoice is no longer unpaid.`
+      );
+      continue;
+    }
+
+    // Another process/user may have already handed it off.
+    if (freshInvoice.needs_human_attention) {
+      console.log(
+        `[Invoice Recovery] Skipping ${invoice.id}: already needs human attention.`
+      );
+      continue;
+    }
+
     const freshReminderCount = freshInvoice.reminder_count || 0;
 
+    // -----------------------------------------------------------
+    // 6. Terminal branch: reminder limit reached.
+    //
+    // NO SMS. Persist the handoff instead.
+    // -----------------------------------------------------------
     if (freshReminderCount >= MAX_REMINDERS) {
-      console.log(
-        `[Invoice Recovery] Skipping ${invoice.id}: reminder limit reached.`
+      const flagged = await flagForHumanAttention(
+        invoice.id,
+        'followup_limit_reached'
       );
+
+      if (flagged) {
+        handedOffCount += 1;
+
+        console.log(
+          `[Invoice Recovery] Handed off ${invoice.id}: ` +
+          `reminder limit reached (${freshReminderCount}/${MAX_REMINDERS}).`
+        );
+      }
+
       continue;
     }
 
@@ -231,6 +297,64 @@ async function runInvoiceRecovery() {
       continue;
     }
 
+    // -----------------------------------------------------------
+    // 7. Reply-stop branch.
+    //
+    // If the customer replied to THIS exact invoice after Arova's
+    // most recent reminder, automation stops and hands the invoice
+    // to a human.
+    //
+    // This relies on inbound Twilio reply linking:
+    // related_type = 'invoice'
+    // related_id   = invoice.id
+    // -----------------------------------------------------------
+    if (freshInvoice.last_reminded_at) {
+      const { data: linkedReply, error: linkedReplyError } =
+        await supabaseAdmin
+          .from('sms_replies')
+          .select('id, received_at')
+          .eq('business_id', invoice.business_id)
+          .eq('customer_id', invoice.customer_id)
+          .eq('related_type', 'invoice')
+          .eq('related_id', invoice.id)
+          .gte('received_at', freshInvoice.last_reminded_at)
+          .order('received_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+      if (linkedReplyError) {
+        // Fail closed for customer experience:
+        // if we cannot safely determine whether they replied,
+        // do NOT send another automated collection message.
+        console.error(
+          `[Invoice Recovery] Could not check replies for ${invoice.id}:`,
+          linkedReplyError.message
+        );
+        continue;
+      }
+
+      if (linkedReply) {
+        const flagged = await flagForHumanAttention(
+          invoice.id,
+          'customer_replied'
+        );
+
+        if (flagged) {
+          handedOffCount += 1;
+
+          console.log(
+            `[Invoice Recovery] Handed off ${invoice.id}: ` +
+            `customer replied after latest reminder.`
+          );
+        }
+
+        continue;
+      }
+    }
+
+    // -----------------------------------------------------------
+    // 8. No handoff condition exists. Send the next reminder.
+    // -----------------------------------------------------------
     const amount = (invoice.amount_cents / 100).toFixed(2);
 
     const forPart = invoice.description
@@ -241,12 +365,6 @@ async function runInvoiceRecovery() {
       ? ` ${invoice.payment_note}.`
       : '';
 
-    // Message copy note:
-    // "If you've already paid, please disregard" softens the tone and
-    // covers the real case where a customer paid out-of-band (cash,
-    // Zelle, check) and the office hasn't marked it paid in Arova yet.
-    // This protects the customer relationship from an accusatory-sounding
-    // reminder when the balance is already settled.
     const messages = {
       en:
         `Hi ${customer.name}, quick note from ${business.name} — ` +
@@ -265,7 +383,7 @@ async function runInvoiceRecovery() {
 
     const message = messages[customer.language] || messages.en;
 
-      try {
+    try {
       const twilioMessage = await twilioClient.messages.create({
         body: message,
         from: process.env.TWILIO_PHONE_NUMBER,
@@ -274,20 +392,21 @@ async function runInvoiceRecovery() {
 
       const remindedAt = new Date().toISOString();
 
-      // Log the outbound SMS. Non-fatal if this fails —
-      // the invoice update below is what governs retry safety.
-     const { error: logError } = await supabaseAdmin
-  .from('sms_outbound')
-  .insert({
-    business_id: invoice.business_id,
-    customer_id: invoice.customer_id,
-    to_phone: toPhone,
-    body: message,
-    twilio_sid: twilioMessage.sid,
-    status: 'sent',
-    source_type: 'invoice_reminder_auto',
-    source_id: invoice.id,
-  });
+      // Log the outbound SMS.
+      // source_id is critical because inbound replies use this
+      // relationship to link back to the exact invoice.
+      const { error: logError } = await supabaseAdmin
+        .from('sms_outbound')
+        .insert({
+          business_id: invoice.business_id,
+          customer_id: invoice.customer_id,
+          to_phone: toPhone,
+          body: message,
+          twilio_sid: twilioMessage.sid,
+          status: 'sent',
+          source_type: 'invoice_reminder_auto',
+          source_id: invoice.id,
+        });
 
       if (logError) {
         console.error(
@@ -296,12 +415,15 @@ async function runInvoiceRecovery() {
         );
       }
 
-      // Record the successful reminder.
+      // Record successful reminder and make sure an invoice being
+      // actively automated is not left with a stale handoff flag.
       const { error: updateError } = await supabaseAdmin
         .from('invoices')
         .update({
           last_reminded_at: remindedAt,
           reminder_count: freshReminderCount + 1,
+          needs_human_attention: false,
+          attention_reason: null,
         })
         .eq('id', invoice.id)
         .eq('status', 'unpaid');
@@ -330,12 +452,15 @@ async function runInvoiceRecovery() {
   }
 
   console.log(
-    `[Invoice Recovery] Run complete. ${sentCount} reminder(s) sent.`
+    `[Invoice Recovery] Run complete. ` +
+    `${sentCount} reminder(s) sent. ` +
+    `${handedOffCount} invoice(s) handed to a human.`
   );
 
   return {
     eligible: eligibleInvoices.length,
     sent: sentCount,
+    handed_off: handedOffCount,
   };
 }
 
