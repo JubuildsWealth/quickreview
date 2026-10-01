@@ -1,6 +1,6 @@
 const twilio = require('twilio');
 const { supabaseAdmin } = require('../lib/supabase');
-
+const { normalizePhone } = require('../lib/phone');
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
@@ -233,28 +233,40 @@ async function runCustomerReactivation() {
     const language = (customer.language || 'en').toLowerCase().slice(0, 2);
     const message = messages[language] || messages.en;
 
-       try {
-      const twilioMessage = await twilioClient.messages.create({
-        body: message,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: customer.phone,
-      });
+      const toPhone = normalizePhone(customer.phone);
 
-      const reactivatedAt = new Date().toISOString();
+if (!toPhone) {
+  console.error(
+    `[Customer Reactivation] Skipping ${customer.id}: ` +
+    `could not normalize customer phone ${customer.phone}.`
+  );
+  continue;
+}
 
-      // Log the outbound SMS. Non-fatal if this fails —
-      // the customer update below is what governs retry safety.
-      const { error: logError } = await supabaseAdmin
-        .from('sms_outbound')
-        .insert({
-          business_id: customer.business_id,
-          customer_id: customer.id,
-          to_phone: customer.phone,
-          body: message,
-          twilio_sid: twilioMessage.sid,
-          status: 'sent',
-          source_type: 'customer_reactivation',
-        });
+try {
+  const twilioMessage = await twilioClient.messages.create({
+    body: message,
+    from: process.env.TWILIO_PHONE_NUMBER,
+    to: toPhone,
+  });
+
+  const reactivatedAt = new Date().toISOString();
+
+  // Log the outbound SMS.
+  // source_id = customer.id gives inbound replies an exact
+  // reactivation context to link back to.
+  const { error: logError } = await supabaseAdmin
+    .from('sms_outbound')
+    .insert({
+      business_id: customer.business_id,
+      customer_id: customer.id,
+      to_phone: toPhone,
+      body: message,
+      twilio_sid: twilioMessage.sid,
+      status: 'sent',
+      source_type: 'customer_reactivation',
+      source_id: customer.id,
+    });
 
       if (logError) {
         console.error(
