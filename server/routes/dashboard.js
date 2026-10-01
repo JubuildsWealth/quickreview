@@ -53,6 +53,7 @@ router.get('/summary', requireAuth, async (req, res) => {
         .from('invoices')
         .select('id, amount_cents, created_at, reminder_count')
         .eq('business_id', businessId)
+         .eq('attribution_level', 'confirmed')
         .neq('status', 'paid'),
 
       req.supabase
@@ -351,6 +352,7 @@ router.get('/weekly-report', requireAuth, async (req, res) => {
         .from('recovery_events')
         .select('amount_cents')
         .eq('business_id', businessId)
+        .eq('attribution_level', 'confirmed')
         .gte('recovered_at', startIso)
         .lt('recovered_at', endIso),
 
