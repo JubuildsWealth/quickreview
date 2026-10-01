@@ -10,11 +10,39 @@ const twilioClient = twilio(
 // First follow-up 2 days after the estimate is sent.
 // Additional follow-ups also spaced 2 days apart.
 // Never send more than 3 automatic follow-ups.
-// Estimates are more time-sensitive than invoices — a stale
-// estimate loses to a competitor faster than a stale invoice
-// gets written off, so we chase a bit sooner.
+//
+// Important handoff behavior:
+// - If a customer replies after the latest Arova follow-up,
+//   automation stops and the estimate is flagged for a human.
+// - If all 3 automatic follow-ups are exhausted,
+//   automation stops and the estimate is flagged for a human.
 const FOLLOWUP_DELAY_DAYS = 2;
 const MAX_FOLLOWUPS = 3;
+
+async function flagForHumanAttention(
+  estimateId,
+  reason
+) {
+  const { error } = await supabaseAdmin
+    .from('estimates')
+    .update({
+      needs_human_attention: true,
+      attention_reason: reason,
+    })
+    .eq('id', estimateId)
+    .eq('status', 'sent');
+
+  if (error) {
+    console.error(
+      `[Estimate Follow-Up] Failed to flag ${estimateId} for human attention:`,
+      error.message
+    );
+
+    return false;
+  }
+
+  return true;
+}
 
 async function runEstimateFollowups() {
   console.log('[Estimate Follow-Up] Starting run...');
@@ -37,6 +65,7 @@ async function runEstimateFollowups() {
       '[Estimate Follow-Up] Could not load automation settings:',
       settingsError.message
     );
+
     throw settingsError;
   }
 
@@ -52,60 +81,77 @@ async function runEstimateFollowups() {
     return {
       eligible: 0,
       sent: 0,
+      handed_off: 0,
     };
   }
 
   // -------------------------------------------------------------
   // 2. Find open estimates belonging to enabled businesses.
-  //    "Open" = status is 'sent' (not accepted, declined, expired).
+  //
+  // IMPORTANT:
+  // We intentionally DO NOT filter out estimates that already hit
+  // MAX_FOLLOWUPS here. They need to reach the processing loop so
+  // Arova can flag them for human attention instead of silently
+  // forgetting about them.
   // -------------------------------------------------------------
-  const { data: estimates, error: estimatesError } = await supabaseAdmin
-    .from('estimates')
-    .select(`
-      id,
-      business_id,
-      customer_id,
-      amount_cents,
-      description,
-      status,
-      sent_at,
-      accepted_at,
-      declined_at,
-      last_reminded_at,
-      reminder_count,
-      customers (
+  const { data: estimates, error: estimatesError } =
+    await supabaseAdmin
+      .from('estimates')
+      .select(`
         id,
-        name,
-        phone,
-        sms_consent,
-        opted_out,
-        language
-      ),
-      businesses (
-        id,
-        name,
-        subscription_status
-      )
-    `)
-    .in('business_id', enabledBusinessIds)
-    .eq('status', 'sent');
+        business_id,
+        customer_id,
+        amount_cents,
+        description,
+        status,
+        sent_at,
+        accepted_at,
+        declined_at,
+        last_reminded_at,
+        reminder_count,
+        needs_human_attention,
+        attention_reason,
+        customers (
+          id,
+          name,
+          phone,
+          sms_consent,
+          opted_out,
+          language
+        ),
+        businesses (
+          id,
+          name,
+          subscription_status
+        )
+      `)
+      .in('business_id', enabledBusinessIds)
+      .eq('status', 'sent');
 
   if (estimatesError) {
     console.error(
       '[Estimate Follow-Up] Could not load estimates:',
       estimatesError.message
     );
+
     throw estimatesError;
   }
 
   // -------------------------------------------------------------
-  // 3. Determine which open estimates are actually due.
+  // 3. Determine which open estimates need processing.
+  //
+  // Includes:
+  // - estimates due for another follow-up
+  // - estimates that reached the follow-up limit and need handoff
+  //
+  // Estimates already handed off are ignored so every cron run
+  // doesn't keep processing the same terminal item.
   // -------------------------------------------------------------
   const eligibleEstimates = (estimates || []).filter((estimate) => {
     const reminderCount = estimate.reminder_count || 0;
 
-    // Hard stop after 3 automatic follow-ups.
-    if (reminderCount >= MAX_FOLLOWUPS) {
+    // Already handed to a human. Automation owns it no longer.
+    if (estimate.needs_human_attention) {
       return false;
     }
 
@@ -118,13 +164,20 @@ async function runEstimateFollowups() {
       return false;
     }
 
+    // IMPORTANT:
+    // Let maxed-out estimates through so the processing loop can
+    // flag them as followup_limit_reached.
+    if (reminderCount >= MAX_FOLLOWUPS) {
+      return true;
+    }
+
     // If we've already followed up, wait FOLLOWUP_DELAY_DAYS
     // from the most recent follow-up.
     if (estimate.last_reminded_at) {
       return estimate.last_reminded_at <= cutoff;
     }
 
-    // Otherwise wait FOLLOWUP_DELAY_DAYS from when the estimate was sent.
+    // Otherwise wait FOLLOWUP_DELAY_DAYS from when estimate was sent.
     return estimate.sent_at <= cutoff;
   });
 
@@ -133,6 +186,7 @@ async function runEstimateFollowups() {
   );
 
   let sentCount = 0;
+  let handedOffCount = 0;
 
   // -------------------------------------------------------------
   // 4. Process eligible estimates.
@@ -141,7 +195,9 @@ async function runEstimateFollowups() {
     const customer = estimate.customers;
     const business = estimate.businesses;
 
-    // Safety gates.
+    // -----------------------------------------------------------
+    // Basic safety gates.
+    // -----------------------------------------------------------
     if (!customer || !business) {
       console.log(
         `[Estimate Follow-Up] Skipping ${estimate.id}: missing customer or business.`
@@ -177,13 +233,27 @@ async function runEstimateFollowups() {
       continue;
     }
 
-    // Re-check the estimate immediately before sending.
-    // This reduces the chance of chasing an estimate that was
-    // just accepted or declined after the initial query.
+    // -----------------------------------------------------------
+    // Re-check the estimate immediately before doing anything.
+    //
+    // This protects against state changes between the initial
+    // query and this exact point in the cron run.
+    // -----------------------------------------------------------
     const { data: freshEstimate, error: freshEstimateError } =
       await supabaseAdmin
         .from('estimates')
-        .select('status, accepted_at, declined_at, reminder_count, last_reminded_at')
+        .select(`
+          id,
+          business_id,
+          customer_id,
+          status,
+          accepted_at,
+          declined_at,
+          reminder_count,
+          last_reminded_at,
+          needs_human_attention,
+          attention_reason
+        `)
         .eq('id', estimate.id)
         .single();
 
@@ -201,23 +271,126 @@ async function runEstimateFollowups() {
       continue;
     }
 
-    if (freshEstimate.accepted_at || freshEstimate.declined_at) {
+    if (
+      freshEstimate.accepted_at ||
+      freshEstimate.declined_at
+    ) {
       console.log(
         `[Estimate Follow-Up] Skipping ${estimate.id}: estimate has been resolved.`
       );
       continue;
     }
 
-    const freshReminderCount = freshEstimate.reminder_count || 0;
-
-    if (freshReminderCount >= MAX_FOLLOWUPS) {
+    // Another process/run may already have handed this to a human.
+    if (freshEstimate.needs_human_attention) {
       console.log(
-        `[Estimate Follow-Up] Skipping ${estimate.id}: follow-up limit reached.`
+        `[Estimate Follow-Up] Skipping ${estimate.id}: already needs human attention.`
       );
       continue;
     }
 
-    // Re-check timing using the freshest row.
+    const freshReminderCount =
+      freshEstimate.reminder_count || 0;
+
+    // -----------------------------------------------------------
+    // 5. REPLY DETECTION
+    //
+    // If Arova has previously followed up on this estimate, look
+    // for a customer reply explicitly linked to THIS estimate and
+    // received after the most recent reminder.
+    //
+    // If found:
+    // - send nothing
+    // - stop automation
+    // - hand conversation to contractor
+    //
+    // This check happens BEFORE follow-up-limit handling because
+    // "customer_replied" is the more useful reason when both are
+    // technically true after follow-up #3.
+    // -----------------------------------------------------------
+    if (
+      freshReminderCount > 0 &&
+      freshEstimate.last_reminded_at
+    ) {
+      const { data: linkedReply, error: replyError } =
+        await supabaseAdmin
+          .from('sms_replies')
+          .select('id, received_at')
+          .eq('business_id', estimate.business_id)
+          .eq('customer_id', estimate.customer_id)
+          .eq('related_type', 'estimate')
+          .eq('related_id', estimate.id)
+          .gte(
+            'received_at',
+            freshEstimate.last_reminded_at
+          )
+          .order('received_at', {
+            ascending: false,
+          })
+          .limit(1)
+          .maybeSingle();
+
+      if (replyError) {
+        // Fail closed on the send.
+        //
+        // If we cannot determine whether the customer replied,
+        // do NOT risk sending another automated follow-up.
+        console.error(
+          `[Estimate Follow-Up] Reply lookup failed for ${estimate.id}:`,
+          replyError.message
+        );
+
+        continue;
+      }
+
+      if (linkedReply) {
+        const flagged =
+          await flagForHumanAttention(
+            estimate.id,
+            'customer_replied'
+          );
+
+        if (flagged) {
+          handedOffCount += 1;
+
+          console.log(
+            `[Estimate Follow-Up] Handed off ${estimate.id}: customer replied after latest follow-up.`
+          );
+        }
+
+        continue;
+      }
+    }
+
+    // -----------------------------------------------------------
+    // 6. FOLLOW-UP LIMIT HANDOFF
+    //
+    // No linked customer reply was found, but Arova has exhausted
+    // all automatic attempts.
+    //
+    // Don't silently forget the opportunity. Hand it to a human.
+    // -----------------------------------------------------------
+    if (freshReminderCount >= MAX_FOLLOWUPS) {
+      const flagged =
+        await flagForHumanAttention(
+          estimate.id,
+          'followup_limit_reached'
+        );
+
+      if (flagged) {
+        handedOffCount += 1;
+
+        console.log(
+          `[Estimate Follow-Up] Handed off ${estimate.id}: follow-up limit reached (${freshReminderCount}/${MAX_FOLLOWUPS}).`
+        );
+      }
+
+      continue;
+    }
+
+    // -----------------------------------------------------------
+    // 7. Re-check timing using the freshest row.
+    // -----------------------------------------------------------
     if (
       freshEstimate.last_reminded_at &&
       freshEstimate.last_reminded_at > cutoff
@@ -228,15 +401,20 @@ async function runEstimateFollowups() {
       continue;
     }
 
-    const amount = (estimate.amount_cents / 100).toFixed(2);
+    // -----------------------------------------------------------
+    // 8. Build follow-up message.
+    // -----------------------------------------------------------
+    const amount =
+      (estimate.amount_cents / 100).toFixed(2);
 
     const forPart = estimate.description
       ? ` for ${estimate.description}`
       : '';
 
-    // Message varies slightly by which follow-up this is.
-    // First = light nudge. Later = a bit more direct.
-    const isFirstFollowup = freshReminderCount === 0;
+    // First = light nudge.
+    // Later = slightly more direct.
+    const isFirstFollowup =
+      freshReminderCount === 0;
 
     const messages = {
       en: isFirstFollowup
@@ -248,32 +426,50 @@ async function runEstimateFollowups() {
         : `Hola ${customer.name}, un seguimiento de ${business.name} sobre su presupuesto${forPart} ($${amount}). ¿Todavía interesado? Responda y díganos. Responda STOP para cancelar.`,
     };
 
-    const language = (customer.language || 'en').toLowerCase().slice(0, 2);
-    const message = messages[language] || messages.en;
+    const language =
+      (customer.language || 'en')
+        .toLowerCase()
+        .slice(0, 2);
 
-      try {
-      const twilioMessage = await twilioClient.messages.create({
-        body: message,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: customer.phone,
-      });
+    const message =
+      messages[language] || messages.en;
 
-      const remindedAt = new Date().toISOString();
+    // -----------------------------------------------------------
+    // 9. Send follow-up.
+    // -----------------------------------------------------------
+    try {
+      const twilioMessage =
+        await twilioClient.messages.create({
+          body: message,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: customer.phone,
+        });
 
-      // Log the outbound SMS. Non-fatal if this fails —
-      // the estimate update below is what governs retry safety.
-      const { error: logError } = await supabaseAdmin
-        .from('sms_outbound')
-       .insert({
-  business_id: estimate.business_id,
-  customer_id: estimate.customer_id,
-  to_phone: customer.phone,
-  body: message,
-  twilio_sid: twilioMessage.sid,
-  status: 'sent',
-  source_type: 'estimate_followup_auto',
-  source_id: estimate.id,
-});
+      const remindedAt =
+        new Date().toISOString();
+
+      // ---------------------------------------------------------
+      // Log outbound SMS.
+      //
+      // source_id is critical: it lets the inbound webhook tie a
+      // later customer reply back to this exact estimate.
+      //
+      // Logging remains non-fatal because Twilio already sent the
+      // message. The estimate update below governs retry safety.
+      // ---------------------------------------------------------
+      const { error: logError } =
+        await supabaseAdmin
+          .from('sms_outbound')
+          .insert({
+            business_id: estimate.business_id,
+            customer_id: estimate.customer_id,
+            to_phone: customer.phone,
+            body: message,
+            twilio_sid: twilioMessage.sid,
+            status: 'sent',
+            source_type: 'estimate_followup_auto',
+            source_id: estimate.id,
+          });
 
       if (logError) {
         console.error(
@@ -282,15 +478,23 @@ async function runEstimateFollowups() {
         );
       }
 
-      // Record the successful follow-up.
-      const { error: updateError } = await supabaseAdmin
-        .from('estimates')
-        .update({
-          last_reminded_at: remindedAt,
-          reminder_count: freshReminderCount + 1,
-        })
-        .eq('id', estimate.id)
-        .eq('status', 'sent');
+      // ---------------------------------------------------------
+      // Record successful follow-up.
+      //
+      // We only update a still-open estimate that hasn't already
+      // been handed to a human.
+      // ---------------------------------------------------------
+      const { error: updateError } =
+        await supabaseAdmin
+          .from('estimates')
+          .update({
+            last_reminded_at: remindedAt,
+            reminder_count:
+              freshReminderCount + 1,
+          })
+          .eq('id', estimate.id)
+          .eq('status', 'sent')
+          .eq('needs_human_attention', false);
 
       if (updateError) {
         console.error(
@@ -304,8 +508,8 @@ async function runEstimateFollowups() {
 
       console.log(
         `[Estimate Follow-Up] Follow-up sent for estimate ${estimate.id}. ` +
-        `Follow-up ${freshReminderCount + 1}/${MAX_FOLLOWUPS}. ` +
-        `Twilio SID: ${twilioMessage.sid}`
+          `Follow-up ${freshReminderCount + 1}/${MAX_FOLLOWUPS}. ` +
+          `Twilio SID: ${twilioMessage.sid}`
       );
     } catch (error) {
       console.error(
@@ -316,12 +520,15 @@ async function runEstimateFollowups() {
   }
 
   console.log(
-    `[Estimate Follow-Up] Run complete. ${sentCount} follow-up(s) sent.`
+    `[Estimate Follow-Up] Run complete. ` +
+      `${sentCount} follow-up(s) sent. ` +
+      `${handedOffCount} estimate(s) handed to a human.`
   );
 
   return {
     eligible: eligibleEstimates.length,
     sent: sentCount,
+    handed_off: handedOffCount,
   };
 }
 
@@ -331,11 +538,17 @@ module.exports = { runEstimateFollowups };
 if (require.main === module) {
   runEstimateFollowups()
     .then((result) => {
-      console.log('[Estimate Follow-Up] Finished:', result);
+      console.log(
+        '[Estimate Follow-Up] Finished:',
+        result
+      );
       process.exit(0);
     })
     .catch((error) => {
-      console.error('[Estimate Follow-Up] Fatal error:', error);
+      console.error(
+        '[Estimate Follow-Up] Fatal error:',
+        error
+      );
       process.exit(1);
     });
 }
