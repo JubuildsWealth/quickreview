@@ -56,15 +56,17 @@ function HandledLine({ count, label }) {
     </li>
   )
 }
-function getRecoveryHealth(attention) {
+
+function getRecoveryHealth(attention, openTotal) {
   const attentionCount =
     (attention.hot_leads_count || 0) +
     (attention.cold_estimates_count || 0) +
     (attention.overdue_invoices_count || 0)
 
-  const moneyNeedingAttention = attention.total_cents || 0
+  const hasOpenMoney = (openTotal || 0) > 0
 
-  if (attentionCount === 0) {
+  // Nothing open at all = genuinely healthy
+  if (!hasOpenMoney && attentionCount === 0) {
     return {
       status: 'Healthy',
       message: 'Your recovery pipeline is under control.',
@@ -73,10 +75,21 @@ function getRecoveryHealth(attention) {
     }
   }
 
+  // Money open but nothing cold yet = product is working, calm state
+  if (hasOpenMoney && attentionCount === 0) {
+    return {
+      status: 'On track',
+      message: 'Arova is handling open opportunities. Nothing cold yet.',
+      dotClass: 'bg-green-500',
+      badgeClass: 'bg-green-50 text-green-700',
+    }
+  }
+
+  // Real urgency: hot leads, multiple cold items, or significant money cold
   if (
     attention.hot_leads_count > 0 ||
     attentionCount >= 3 ||
-    moneyNeedingAttention >= 500000
+    (attention.total_cents || 0) >= 500000
   ) {
     return {
       status: 'Needs attention',
@@ -93,6 +106,7 @@ function getRecoveryHealth(attention) {
     badgeClass: 'bg-gray-100 text-gray-700',
   }
 }
+
 function TodaySkeleton() {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-8 mb-6 animate-pulse">
@@ -106,7 +120,7 @@ function TodaySkeleton() {
   )
 }
 
-export default function ArovaToday() {
+export default function ArovaToday({ summary }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -129,58 +143,82 @@ export default function ArovaToday() {
 
   const { business_name, attention, handled_today } = data
 
-  const nothingNeedsAttention =
-    attention.total_cents === 0 &&
-    attention.hot_leads_count === 0 &&
-    attention.cold_estimates_count === 0 &&
-    attention.overdue_invoices_count === 0
+  // Hero number is the HONEST total of open at-risk revenue (same source as the
+  // Revenue at risk card below). Keeps the two numbers consistent so the
+  // dashboard never contradicts itself.
+  const openTotalCents = summary?.open_total_cents || 0
+  const hasOpenMoney = openTotalCents > 0
 
-  const recoveryHealth = getRecoveryHealth(attention)
+  // Subtext is driven by the 7-day "attention" logic — tells the user what's
+  // actually going cold right now vs what's just open and still fresh.
+  const coldCount =
+    (attention.cold_estimates_count || 0) +
+    (attention.overdue_invoices_count || 0)
+  const hotLeads = attention.hot_leads_count || 0
+
+  const nothingOpenAtAll =
+    !hasOpenMoney && coldCount === 0 && hotLeads === 0
+
+  const recoveryHealth = getRecoveryHealth(attention, openTotalCents)
+
+  // Three honest subtext states
+  let subtext
+  if (!hasOpenMoney) {
+    subtext = "You're all caught up"
+  } else if (coldCount === 0 && hotLeads === 0) {
+    subtext = 'in open opportunities · all current, nothing cold yet'
+  } else if (hotLeads > 0 && coldCount === 0) {
+    subtext = `in open opportunities · ${hotLeads} hot ${hotLeads === 1 ? 'lead' : 'leads'} waiting`
+  } else if (coldCount > 0 && hotLeads === 0) {
+    subtext = `in open opportunities · ${coldCount} ${coldCount === 1 ? 'needs' : 'need'} attention this week`
+  } else {
+    subtext = `in open opportunities · ${coldCount} going cold · ${hotLeads} hot ${hotLeads === 1 ? 'lead' : 'leads'}`
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8 mb-6">
-     {/* -------- Header -------- */}
-<div className="mb-6">
-  <div className="flex flex-wrap items-center justify-between gap-3">
-    <p className="text-sm font-medium text-gray-500">
-      {getGreeting()}, {business_name}
-    </p>
+      {/* -------- Header -------- */}
+      <div className="mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-medium text-gray-500">
+            {getGreeting()}, {business_name}
+          </p>
 
-    <div
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${recoveryHealth.badgeClass}`}
-    >
-      <span
-        className={`w-1.5 h-1.5 rounded-full ${recoveryHealth.dotClass}`}
-      />
-      Recovery health · {recoveryHealth.status}
-    </div>
-  </div>
+          <div
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${recoveryHealth.badgeClass}`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${recoveryHealth.dotClass}`}
+            />
+            Recovery health · {recoveryHealth.status}
+          </div>
+        </div>
 
-        {nothingNeedsAttention ? (
+        {nothingOpenAtAll ? (
           <p className="text-3xl sm:text-4xl font-semibold tracking-tight text-gray-900 leading-tight mt-2">
             Nothing needs your attention right now.
           </p>
         ) : (
           <div className="flex items-baseline gap-3 flex-wrap mt-2">
             <span className="text-4xl sm:text-5xl font-semibold tracking-tight text-gray-900 leading-none">
-              {formatMoney(attention.total_cents)}
+              {formatMoney(openTotalCents)}
             </span>
             <span className="text-sm text-gray-500">
-              needs your attention today
+              {subtext}
             </span>
           </div>
         )}
       </div>
 
       {/* -------- Attention items -------- */}
-      {!nothingNeedsAttention && (
+      {(coldCount > 0 || hotLeads > 0) && (
         <div className="space-y-2.5 mb-6">
           <AttentionRow
             icon={Flame}
             iconBg="bg-orange-50"
             iconColor="text-orange-600"
-            label={attention.hot_leads_count === 1 ? 'hot lead waiting' : 'hot leads waiting'}
-            count={attention.hot_leads_count}
+            label={hotLeads === 1 ? 'hot lead waiting' : 'hot leads waiting'}
+            count={hotLeads}
             amount={null}
             to="/dashboard"
           />
@@ -207,7 +245,7 @@ export default function ArovaToday() {
 
       {/* -------- Arova handled today -------- */}
       {handled_today.total_actions > 0 && (
-        <div className={`${nothingNeedsAttention ? '' : 'pt-6 border-t border-gray-100'}`}>
+        <div className={`${nothingOpenAtAll ? '' : 'pt-6 border-t border-gray-100'}`}>
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="w-4 h-4 text-gray-400" />
             <p className="text-sm font-medium text-gray-700">
