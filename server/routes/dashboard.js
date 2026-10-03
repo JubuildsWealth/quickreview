@@ -53,7 +53,6 @@ router.get('/summary', requireAuth, async (req, res) => {
         .from('invoices')
         .select('id, amount_cents, created_at, reminder_count')
         .eq('business_id', businessId)
-         .eq('attribution_level', 'confirmed')
         .neq('status', 'paid'),
 
       req.supabase
